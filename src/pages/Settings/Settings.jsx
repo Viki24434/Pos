@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Button from '../../components/Button/Button';
 import Alert from '../../components/Alert/Alert';
+import PaymentMethods from '../../components/PaymentMethods/PaymentMethods';
 
 export default function Settings() {
   const [storeName, setStoreName] = useState('');
@@ -20,7 +21,7 @@ export default function Settings() {
           setStoreAddress(res.address || '');
           setStoreFooter(res.footer || '');
         }
-      } catch (e) {
+      } catch {
         setError('Gagal memuat pengaturan toko.');
       }
     })();
@@ -42,7 +43,7 @@ export default function Settings() {
       } else {
         setError('Gagal menyimpan pengaturan.');
       }
-    } catch (e) {
+    } catch {
       setError('Terjadi kesalahan sistem.');
     }
   };
@@ -112,6 +113,7 @@ export default function Settings() {
           </Button>
         </form>
       </div>
+      <PaymentMethods />
     </div>
   );
 }

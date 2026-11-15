@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import process from 'node:process';
+import { migratePayments } from './payment-migration.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -134,6 +135,7 @@ async function inisialisasiDatabase() {
 
         await migrateProductVariants(db);
         await migrateCustomerStatus(db);
+        await withTransaction(migratePayments);
         console.log('Database SQLite siap digunakan.');
     } catch (error) {
         console.error('Gagal inisialisasi database SQLite:', error.message);

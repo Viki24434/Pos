@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS finance (
   cash_revenue DECIMAL(15,2) DEFAULT 0.00,
   transfer_revenue DECIMAL(15,2) DEFAULT 0.00,
   qris_revenue DECIMAL(15,2) DEFAULT 0.00,
+  other_revenue DECIMAL(15,2) DEFAULT 0.00,
   cash_income DECIMAL(15,2) DEFAULT 0.00,
   transfer_income DECIMAL(15,2) DEFAULT 0.00,
   cash_expenditure DECIMAL(15,2) DEFAULT 0.00,
@@ -147,11 +148,21 @@ CREATE TABLE IF NOT EXISTS order_items (
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_product_id ON order_items(product_id);
 
+CREATE TABLE IF NOT EXISTS payment_methods (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id INTEGER NOT NULL DEFAULT 1,
+  name TEXT COLLATE NOCASE NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'other' CHECK(kind IN ('cash','transfer','qris','other')),
+  active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+  UNIQUE(store_id, name)
+);
+INSERT OR IGNORE INTO payment_methods (store_id, name, kind) VALUES (1, 'Cash', 'cash'), (1, 'Transfer', 'transfer'), (1, 'QRIS', 'qris');
+
 CREATE TABLE IF NOT EXISTS payments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   order_id INTEGER NOT NULL,
   user_id INTEGER NOT NULL,
-  payment_method TEXT CHECK(payment_method IN ('Cash','Transfer','QRIS')) NOT NULL,
+  payment_method TEXT NOT NULL,
   amount DECIMAL(15,2) NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   store_id INTEGER NOT NULL,

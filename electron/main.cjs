@@ -56,6 +56,7 @@ ipcMain.handle('activate-device', (event, lisensiInput) => {
 
 const Product = require('../models/Product');
 const Order = require('../models/Order');
+const { registerPaymentHandlers } = require('./payment-handlers.cjs');
 const Report = require('../models/Report');
 const Category = require('../models/Category');
 const Unit = require('../models/Unit');
@@ -212,37 +213,7 @@ ipcMain.handle('delete-product', async (event, id) => {
     try { await Product.deleteProduct(id); return true; } catch (e) { return false; }
 });
 
-ipcMain.handle('get-orders', async (event, filters) => {
-    try {
-        const db = await getDbConnection();
-        let query = `
-            SELECT o.*, COALESCE(SUM(p.amount), 0) as total_paid 
-            FROM orders o 
-            LEFT JOIN payments p ON o.id = p.order_id 
-            WHERE 1=1
-        `;
-        let params = [];
-
-        if (filters && filters.start) {
-            query += " AND date(o.created_at) >= date(?)";
-            params.push(filters.start);
-        }
-        if (filters && filters.end) {
-            query += " AND date(o.created_at) <= date(?)";
-            params.push(filters.end);
-        }
-        if (filters && filters.search) {
-            query += " AND (o.invoice_number LIKE ? OR o.customer_name LIKE ?)";
-            params.push(`%${filters.search}%`, `%${filters.search}%`);
-        }
-
-        query += " GROUP BY o.id ORDER BY o.created_at DESC";
-        const rows = await db.all(query, params);
-        return rows;
-    } catch (e) {
-        return [];
-    }
-});
+registerPaymentHandlers(ipcMain);
 
 ipcMain.handle('get-order-detail', async (event, id) => {
     try {
@@ -289,36 +260,6 @@ ipcMain.handle('get-profit-loss-report', async (event, filter) => {
 
 let mainWindow;
 let loadingWindow;
-
-ipcMain.handle('create-order', async (event, data) => {
-    try {
-        const orderItems = data.items.map(item => ({
-            product_id: item.product_id ?? item.id,
-            variant_id: item.variant_id ?? null,
-            qty: item.qty,
-            price: item.price,
-            subtotal: item.subtotal
-        }));
-        
-        const orderId = await Order.createOrder(data.customerName, orderItems, 0, data.discount, 0,
-            { amount: data.amountPaid ?? 0, method: data.paymentMethod || 'Cash', user_id: 1 });
-        return orderId;
-    } catch (e) {
-        return { success: false, message: e.message || 'Gagal memproses pesanan.' };
-    }
-});
-
-ipcMain.handle('process-payment', async (event, data) => {
-    try {
-        await Order.addPayment(data.id, 1, data.paymentMethod, data.total);
-        if (data.total >= data.sisa) {
-            await Order.updateStatus(data.id, 'Selesai');
-        }
-        return true;
-    } catch (e) {
-        return false;
-    }
-});
 
 function createLoadingWindow() {
     loadingWindow = new BrowserWindow({

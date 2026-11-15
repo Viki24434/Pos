@@ -32,13 +32,16 @@ export default function Finance() {
     try {
       const res = await window.api.getFinanceSummary({ start: startDate, end: endDate });
       setSummary(res);
-    } catch (e) {
+    } catch {
       setError('Gagal memuat rekapitulasi keuangan.');
     }
   };
 
   useEffect(() => {
-    loadData();
+    let active = true;
+    window.api.getFinanceSummary({ start: '', end: '' }).then(data => { if (active) setSummary(data); })
+      .catch(() => { if (active) setError('Gagal memuat rekapitulasi keuangan.'); });
+    return () => { active = false; };
   }, []);
 
   const handleFilter = (e) => {
@@ -78,7 +81,7 @@ export default function Finance() {
       } else {
         alert('Gagal menyimpan transaksi.');
       }
-    } catch (e) {
+    } catch {
       alert('Terjadi kesalahan sistem.');
     }
   };
@@ -88,10 +91,12 @@ export default function Finance() {
     { key: 'cash_in', cellStyle: { textAlign: 'right', color: '#16a34a', fontWeight: 600, borderBottom: '1px solid var(--border-color)' }, render: (row) => formatRp(row.cash_in) },
     { key: 'tf_in', cellStyle: { textAlign: 'right', color: '#16a34a', fontWeight: 600, borderBottom: '1px solid var(--border-color)' }, render: (row) => formatRp(row.tf_in) },
     { key: 'qris_in', cellStyle: { textAlign: 'right', color: '#16a34a', fontWeight: 600, borderBottom: '1px solid var(--border-color)' }, render: (row) => formatRp(row.qris_in) },
+    { key: 'other_in', cellStyle: { textAlign: 'right', color: '#16a34a', fontWeight: 600 }, render: row => formatRp(row.other_in) },
     { key: 'cash_out', cellStyle: { textAlign: 'right', color: '#e11d48', fontWeight: 600, borderBottom: '1px solid var(--border-color)' }, render: (row) => formatRp(row.cash_out) },
     { key: 'tf_out', cellStyle: { textAlign: 'right', color: '#e11d48', fontWeight: 600, borderBottom: '1px solid var(--border-color)' }, render: (row) => formatRp(row.tf_out) },
     { key: 'saldo_cash', cellStyle: { textAlign: 'right', fontWeight: 700, borderBottom: '1px solid var(--border-color)' }, render: (row) => formatRp(row.saldo_cash) },
     { key: 'saldo_tf', cellStyle: { textAlign: 'right', fontWeight: 700, borderBottom: '1px solid var(--border-color)' }, render: (row) => formatRp(row.saldo_tf) },
+    { key: 'saldo_other', cellStyle: { textAlign: 'right', fontWeight: 700 }, render: row => formatRp(row.saldo_other) },
     { key: 'saldo_qris', cellStyle: { textAlign: 'right', fontWeight: 700, borderBottom: '1px solid var(--border-color)' }, render: (row) => formatRp(row.saldo_qris) }
   ];
 
@@ -99,18 +104,20 @@ export default function Finance() {
     <>
       <tr>
         <th rowSpan="2" style={{ borderRight: '1px solid var(--border-color)', verticalAlign: 'middle', textAlign: 'center', padding: '14px 12px' }}>Tanggal</th>
-        <th colSpan="3" style={{ background: '#f0fdf4', color: '#16a34a', borderRight: '1px solid var(--border-color)', textAlign: 'center', padding: '10px' }}>OMZET & MASUK (+)</th>
+        <th colSpan="4" style={{ background: '#f0fdf4', color: '#16a34a', borderRight: '1px solid var(--border-color)', textAlign: 'center', padding: '10px' }}>OMZET & MASUK (+)</th>
         <th colSpan="2" style={{ background: '#fef2f2', color: '#e11d48', borderRight: '1px solid var(--border-color)', textAlign: 'center', padding: '10px' }}>PENGELUARAN (-)</th>
-        <th colSpan="3" style={{ background: '#f8fafc', color: '#334155', textAlign: 'center', padding: '10px' }}>SISA SALDO HARIAN</th>
+        <th colSpan="4" style={{ background: '#f8fafc', color: '#334155', textAlign: 'center', padding: '10px' }}>SISA SALDO HARIAN</th>
       </tr>
       <tr>
         <th style={{ background: '#f0fdf4', color: '#16a34a', textAlign: 'right', fontSize: '11px', padding: '10px' }}>Cash</th>
         <th style={{ background: '#f0fdf4', color: '#16a34a', textAlign: 'right', fontSize: '11px', padding: '10px' }}>Transfer</th>
         <th style={{ background: '#f0fdf4', color: '#16a34a', textAlign: 'right', fontSize: '11px', padding: '10px' }}>QRIS</th>
+        <th style={{ background: '#f0fdf4', color: '#16a34a', textAlign: 'right', fontSize: '11px', padding: '10px' }}>Metode Lain</th>
         <th style={{ background: '#fef2f2', color: '#e11d48', textAlign: 'right', fontSize: '11px', padding: '10px' }}>Cash</th>
         <th style={{ background: '#fef2f2', color: '#e11d48', textAlign: 'right', fontSize: '11px', padding: '10px' }}>Transfer</th>
         <th style={{ background: '#f8fafc', color: '#10b981', textAlign: 'right', fontSize: '11px', padding: '10px' }}>Cash</th>
         <th style={{ background: '#f8fafc', color: '#0ea5e9', textAlign: 'right', fontSize: '11px', padding: '10px' }}>Transfer</th>
+        <th style={{ background: '#f8fafc', color: '#334155', textAlign: 'right', fontSize: '11px', padding: '10px' }}>Metode Lain</th>
         <th style={{ background: '#f8fafc', color: '#8b5cf6', textAlign: 'right', fontSize: '11px', padding: '10px' }}>QRIS</th>
       </tr>
     </>
@@ -160,6 +167,12 @@ export default function Finance() {
           <div style={{ fontSize: '11px', fontWeight: '600', background: 'rgba(255,255,255,0.2)', padding: '8px 12px', borderRadius: '12px' }}>*Mencatat total omzet kotor QRIS yang masuk.</div>
         </div>
 
+        <div className="card" style={{ margin: 0 }}>
+          <h4>Saldo Metode Lain</h4>
+          <h2>{formatRp(summary?.saldoOther)}</h2>
+          <p>Total penerimaan dari metode pembayaran tambahan.</p>
+        </div>
+
         <div className="card-stat stat-piutang" style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', position: 'relative', overflow: 'hidden', color: 'white', padding: '24px', borderRadius: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '150px' }}>
           <i className="fas fa-handshake stat-bg-icon" style={{ position: 'absolute', right: '-10px', bottom: '-10px', fontSize: '90px', opacity: '0.15', transform: 'rotate(-15deg)' }}></i>
           <h4 style={{ margin: 0, fontSize: '12px', textTransform: 'uppercase', fontWeight: '800', opacity: 0.9 }}>Total Piutang</h4>
@@ -167,6 +180,11 @@ export default function Finance() {
           <div style={{ fontSize: '11px', fontWeight: '600', background: 'rgba(255,255,255,0.2)', padding: '8px 12px', borderRadius: '12px' }}>Total tagihan pelanggan yang belum dilunasi.</div>
         </div>
       </div>
+
+      <Card>
+        <h3>Penerimaan per Metode Bayar</h3>
+        <Table columns={[{ key: 'name', label: 'Metode' }, { key: 'total', label: 'Total Diterima', render: row => formatRp(row.total) }]} data={summary?.methods || []} keyField="name" emptyText="Belum ada pembayaran pada periode ini." />
+      </Card>
 
       <Card style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '20px', background: '#f8fafc', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>

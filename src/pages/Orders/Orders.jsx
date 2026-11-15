@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from '../../components/Button/Button';
 import Input from '../../components/Input/Input';
-import Select from '../../components/Select/Select';
+import PaymentForm from '../../components/PaymentForm/PaymentForm';
+import { useAuth } from '../../context/AuthContext';
 import Alert from '../../components/Alert/Alert';
 import Modal from '../../components/Modal/Modal';
 import Table from '../../components/Table/Table';
@@ -14,26 +15,32 @@ import './Orders.css';
 
 export default function Orders() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [paying, setPaying] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
   const [orders, setOrders] = useState([]);
   const [filter, setFilter] = useState({ start: '', end: '', search: '' });
   const [error, setError] = useState('');
 
-  const [detail, setDetail] = useState({ open: false, invoice: '', items: [] });
+  const [detail, setDetail] = useState({ open: false, invoice: '', items: [], payments: [] });
   const [payment, setPayment] = useState({
-    open: false, orderId: '', sisa: 0, nominal: '', method: 'Cash', info: '',
+    open: false, orderId: '', sisa: 0,
   });
 
   const loadOrders = async () => {
     try {
       const data = await window.api.getOrders(filter);
       setOrders(data || []);
-    } catch (e) {
+    } catch {
       setError('Gagal memuat data pesanan.');
     }
   };
 
   useEffect(() => {
-    loadOrders();
+    let active = true;
+    window.api.getOrders({}).then(data => { if (active) setOrders(data || []); })
+      .catch(() => { if (active) setError('Gagal memuat data pesanan.'); });
+    return () => { active = false; };
   }, []);
 
   const handleSearch = (e) => {
@@ -43,61 +50,37 @@ export default function Orders() {
 
   const openDetail = async (id, invoice) => {
     try {
-      const items = await window.api.getOrderDetail(id);
-      setDetail({ open: true, invoice, items: items || [] });
-    } catch (e) {
+      const [items, payments] = await Promise.all([window.api.getOrderDetail(id), window.api.getOrderPayments(id)]);
+      setDetail({ open: true, invoice, items: items || [], payments: payments || [] });
+    } catch {
       setError('Gagal memuat detail pesanan.');
     }
   };
 
-  const openPayment = (order) => {
-    const sisa = order.total_amount - (order.total_paid || 0);
-    setPayment({
-      open: true,
-      orderId: order.id,
-      sisa,
-      nominal: sisa,
-      method: 'Cash',
-      info: sisa <= 0 ? 'Lunas' : 'Belum Lunas',
-    });
+  const openPayment = order => {
+    setPaymentError('');
+    setPayment({ open: true, orderId: order.id, sisa: Math.max(0, Math.round((order.total_amount - (order.total_paid || 0)) * 100) / 100) });
   };
 
-  const handleNominalChange = (val) => {
-    const num = parseFloat(val) || 0;
-    setPayment((p) => ({
-      ...p,
-      nominal: val,
-      info: num >= p.sisa ? 'Lunas (Akan mengubah status pesanan)' : 'Sebagian (Masih ada sisa tagihan)',
-    }));
-  };
-
-  const setLunas = () => {
-    setPayment((p) => ({ ...p, nominal: p.sisa, info: 'Lunas (Akan mengubah status pesanan)' }));
-  };
-
-  const submitPayment = async () => {
+  const submitPayment = async ({ amount, method }) => {
+    if (paying) return;
+    setPaying(true);
+    setPaymentError('');
     try {
-      const success = await window.api.processPayment({
-        id: payment.orderId,
-        total: parseFloat(payment.nominal) || 0,
-        sisa: payment.sisa,
-        paymentMethod: payment.method,
-      });
-      if (success) {
-        setPayment((p) => ({ ...p, open: false }));
-        loadOrders();
-      } else {
-        alert('Gagal memproses pembayaran.');
-      }
-    } catch (e) {
-      alert('Terjadi kesalahan sistem.');
-    }
+      const result = await window.api.processPayment({ id: payment.orderId, total: amount, paymentMethod: method, userId: user?.id });
+      if (!result?.success) throw new Error(result?.message || 'Gagal memproses pembayaran.');
+      setPayment(previous => ({ ...previous, open: false }));
+      await loadOrders();
+    } catch (saveError) { setPaymentError(saveError.message || 'Gagal memproses pembayaran.'); }
+    finally { setPaying(false); }
   };
 
   const orderColumns = [
     { key: 'invoice_number', label: 'No. Invoice', cellStyle: { fontWeight: 700, color: 'var(--primary)' } },
     { key: 'customer_name', label: 'Pelanggan', render: (o) => <b>{o.customer_name}</b> },
     { key: 'total_amount', label: 'Total Tagihan', render: (o) => formatRp(o.total_amount) },
+    { key: 'total_paid', label: 'Terbayar', render: o => formatRp(o.total_paid || 0) },
+    { key: 'remaining', label: 'Sisa Tagihan', render: o => formatRp(Math.max(0, o.total_amount - (o.total_paid || 0))) },
     { key: 'payment_status', label: 'Status', headerStyle: { textAlign: 'center' }, cellStyle: { textAlign: 'center' }, render: (o) => <StatusBadge status={o.payment_status} /> },
     { key: 'created_at', label: 'Tanggal', render: (o) => new Date(o.created_at).toLocaleString('id-ID') },
   ];
@@ -159,41 +142,16 @@ export default function Orders() {
         maxWidth={700}
       >
         <Table columns={itemColumns} data={detail.items} emptyText="Tidak ada item." />
+        <h4>Pembayaran Tercatat</h4>
+        <Table columns={[
+          { key: 'created_at', label: 'Tanggal', render: row => new Date(row.created_at).toLocaleString('id-ID') },
+          { key: 'payment_method', label: 'Metode' },
+          { key: 'amount', label: 'Nominal', render: row => formatRp(row.amount) },
+        ]} data={detail.payments} emptyText="Belum ada pembayaran." />
       </Modal>
 
-      <Modal
-        isOpen={payment.open}
-        onClose={() => setPayment({ ...payment, open: false })}
-        title="Form Pembayaran"
-        maxWidth={450}
-      >
-        <Input label="Sisa Tagihan yang Belum Dibayar" value={formatRp(payment.sisa)} readOnly className="payment-sisa" />
-
-        <div className="input-group">
-          <label>Nominal Bayar</label>
-          <div className="payment-nominal-row">
-            <input
-              type="number"
-              className="input-field"
-              value={payment.nominal}
-              onChange={(e) => handleNominalChange(e.target.value)}
-              placeholder="Jumlah bayar"
-            />
-            <Button variant="success" icon="fas fa-check-double" onClick={setLunas}>Lunaskan</Button>
-          </div>
-        </div>
-
-        <Select label="Metode Pembayaran" value={payment.method} onChange={(e) => setPayment({ ...payment, method: e.target.value })}>
-          <option value="Cash">Cash</option>
-          <option value="Transfer">Transfer</option>
-          <option value="QRIS">QRIS</option>
-        </Select>
-
-        <Input label="Status Pembayaran" value={payment.info} readOnly />
-
-        <Button variant="primary" fullWidth icon="fas fa-save" onClick={submitPayment} className="payment-submit">
-          Simpan Pembayaran
-        </Button>
+      <Modal id="order-payment" isOpen={payment.open} onClose={() => { if (!paying) setPayment(previous => ({ ...previous, open: false })); }} title="Form Pembayaran" maxWidth={500}>
+        <PaymentForm total={payment.sisa} busy={paying} error={paymentError} onSubmit={submitPayment} />
       </Modal>
     </div>
   );

@@ -110,7 +110,7 @@ test('product variants and order stock integration', async t => {
     await t.test('checkout payment failure rolls back variant stock and order creation', async () => {
         const before = await db.get('SELECT COUNT(*) as total FROM orders');
         const item = { product_id: product.id, variant_id: product.variants[0].id, price: 60000, qty: 1 };
-        await assert.rejects(Order.createOrder('Test', [item], 0, 0, 0, { amount: 60000, method: 'Cash', user_id: 99999 }), /FOREIGN KEY/);
+        await assert.rejects(Order.createOrder('Test', [item], 0, 0, 0, { amount: 60000, method: 'Cash', user_id: 99999 }), /Pengguna kasir/);
         assert.equal((await Product.getById(product.id)).stock, 4);
         assert.equal((await db.get('SELECT COUNT(*) as total FROM orders')).total, before.total);
     });

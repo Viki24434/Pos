@@ -51,9 +51,13 @@ contextBridge.exposeInMainWorld('api', {
   // ===== Orders / POS =====
   getOrders: (filters) => ipcRenderer.invoke('get-orders', filters),
   getOrderDetail: (id) => ipcRenderer.invoke('get-order-detail', id),
+  getOrderPayments: (id) => ipcRenderer.invoke('get-order-payments', id),
   getPrintData: (id) => ipcRenderer.invoke('get-print-data', id),
   createOrder: (data) => ipcRenderer.invoke('create-order', data),
   processPayment: (data) => ipcRenderer.invoke('process-payment', data),
+  getPaymentMethods: (options) => ipcRenderer.invoke('get-payment-methods', options),
+  createPaymentMethod: (data) => ipcRenderer.invoke('create-payment-method', data),
+  setPaymentMethodActive: (id, active) => ipcRenderer.invoke('set-payment-method-active', id, active),
 
   // ===== Finance =====
   getFinanceSummary: (filter) => ipcRenderer.invoke('get-finance-summary', filter),

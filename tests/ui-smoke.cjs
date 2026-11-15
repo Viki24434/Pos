@@ -10,14 +10,15 @@ const { getDbConnection, inisialisasiDatabase } = require('../config/db.js');
 const Product = require('../models/Product.js');
 const Order = require('../models/Order.js');
 const Customer = require('../models/Customer.js');
+const Finance = require('../models/Finance.js');
 const { registerCustomerHandlers } = require('../electron/customer-handlers.cjs');
+const { registerPaymentHandlers } = require('../electron/payment-handlers.cjs');
 
 let server;
 let window;
 let profile;
 let db;
 let savedPayload;
-let orderPayload;
 
 async function evaluate(code) {
     return window.webContents.executeJavaScript(code);
@@ -59,7 +60,9 @@ app.whenReady().then(async () => {
         ipcMain.handle('get-products', () => Product.getAll());
         ipcMain.handle('get-categories', () => []);
         ipcMain.handle('get-units', () => []);
-        ipcMain.handle('get-orders', () => []);
+        registerPaymentHandlers(ipcMain);
+        ipcMain.handle('get-order-detail', (_event, id) => Order.getOrderItems(id));
+        ipcMain.handle('get-finance-summary', (_event, filters) => Finance.getSummary(filters.start, filters.end));
         registerCustomerHandlers(ipcMain);
         ipcMain.handle('create-product', async (_event, payload) => {
             savedPayload = payload;
@@ -70,11 +73,6 @@ app.whenReady().then(async () => {
             savedPayload = payload;
             try { await Product.update(id, payload); return true; }
             catch (error) { return { success: false, message: error.message }; }
-        });
-        ipcMain.handle('create-order', async (_event, payload) => {
-            orderPayload = payload;
-            return Order.createOrder(payload.customerName, payload.items, 0, payload.discount, 0,
-                { amount: payload.amountPaid, method: payload.paymentMethod, user_id: 1 });
         });
         const isolatedSession = session.fromPartition(`variants-ui-${Date.now()}`);
         window = new BrowserWindow({ show: false, width: 1280, height: 900,
@@ -135,15 +133,64 @@ app.whenReady().then(async () => {
         await evaluate(`document.querySelectorAll('.qty-stepper')[1].querySelectorAll('button')[1].click()`);
         await waitFor(`document.querySelectorAll('.qty-stepper')[1].textContent.includes('2')`);
         await clickButton('Proses Pembayaran');
+        await waitFor(`!!document.querySelector('#checkout-payment #payment-method option[value="Cash"]')`);
+        await fill('#payment-amount', 200000);
+        await waitFor(`document.querySelector('#checkout-payment').innerText.includes('30.000')`);
+        await clickButton('Simpan Pesanan & Pembayaran');
         await waitFor(`document.body.innerText.includes('Riwayat Pesanan')`);
-        assert.equal(orderPayload.items.length, 2);
-        assert.notEqual(orderPayload.items[0].variant_id, orderPayload.items[1].variant_id);
-        assert.equal(orderPayload.grandTotal, 170000);
         assert.deepEqual((await Product.getById(product.id)).variants.map(variant => variant.stock), [4, 1]);
         const order = await db.get('SELECT * FROM orders ORDER BY id DESC LIMIT 1');
+        assert.equal(order.total_amount, 170000);
         assert.equal(order.payment_status, 'Lunas');
         assert.equal((await Order.getOrderItems(order.id)).length, 2);
+        assert.equal((await db.get('SELECT SUM(amount) as amount FROM payments WHERE order_id = ?', [order.id])).amount, 170000);
         console.log('PASS: cashier keeps variants separate, changes quantities, and completes paid checkout');
+
+        await evaluate(`location.hash = '#/settings'`);
+        await waitFor(`!!document.querySelector('#payment-method-name')`);
+        await fill('#payment-method-name', 'DANA');
+        await clickButton('Tambah Metode');
+        await waitFor(`document.querySelector('#payment-method-name').value === '' && document.body.innerText.includes('DANA')`);
+        console.log('PASS: settings creates a custom payment method');
+
+        await evaluate(`location.hash = '#/orders/create'`);
+        await waitFor(`document.querySelectorAll('.product-tile').length === 1`);
+        await evaluate(`document.querySelector('.product-tile').click()`);
+        await waitFor(`document.querySelectorAll('.variant-option').length === 2`);
+        await evaluate(`document.querySelectorAll('.variant-option')[0].click()`);
+        await clickButton('Proses Pembayaran');
+        await waitFor(`!!document.querySelector('#payment-method option[value="DANA"]')`);
+        await evaluate(`document.querySelector('#payment-method').value = 'DANA'; document.querySelector('#payment-method').dispatchEvent(new Event('change', { bubbles: true }))`);
+        await fill('#payment-amount', 20000);
+        await clickButton('Simpan Pesanan & Pembayaran');
+        await waitFor(`document.body.innerText.includes('Riwayat Pesanan') && !!document.querySelector('button[title="Bayar"]')`);
+        const depositOrder = await db.get('SELECT * FROM orders ORDER BY id DESC LIMIT 1');
+        assert.equal(depositOrder.payment_status, 'DP');
+        assert.equal((await db.get('SELECT payment_method FROM payments WHERE order_id = ?', [depositOrder.id])).payment_method, 'DANA');
+        await evaluate(`document.querySelector('button[title="Bayar"]').click()`);
+        await waitFor(`!!document.querySelector('#order-payment #payment-method option[value="DANA"]')`);
+        assert.equal(await evaluate(`document.querySelector('#payment-amount').value`), '40000');
+        await evaluate(`document.querySelector('#payment-method').value = 'DANA'; document.querySelector('#payment-method').dispatchEvent(new Event('change', { bubbles: true }))`);
+        await fill('#payment-amount', 50000);
+        await clickButton('Simpan Pembayaran');
+        await waitFor(`document.querySelector('#order-payment').innerText.includes('tidak boleh melebihi tagihan')`);
+        await fill('#payment-amount', 40000);
+        if (process.env.APP_JS_UI_SCREENSHOTS) {
+            await new Promise(resolve => setTimeout(resolve, 350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'payment-custom.png'), (await window.webContents.capturePage()).toPNG());
+        }
+        await clickButton('Simpan Pembayaran');
+        await waitFor(`!document.querySelector('#order-payment') && !document.querySelector('button[title="Bayar"]')`);
+        assert.equal((await Order.getOrderById(depositOrder.id)).payment_status, 'Lunas');
+        assert.equal((await db.get('SELECT SUM(amount) as total FROM payments WHERE order_id = ?', [depositOrder.id])).total, 60000);
+        await evaluate(`Array.from(document.querySelectorAll('tr')).find(row => row.innerText.includes(${JSON.stringify(depositOrder.invoice_number)})).querySelector('button[title="Detail"]').click()`);
+        await waitFor(`document.body.innerText.includes('Pembayaran Tercatat') && document.body.innerText.includes('DANA')`);
+        assert.equal((await Order.getOrderPayments(depositOrder.id)).length, 2);
+        console.log('PASS: custom-method deposit, excessive-payment error and later settlement through real IPC');
+        await evaluate(`location.hash = '#/finance'`);
+        await waitFor(`document.body.innerText.includes('DANA') && document.body.innerText.includes('60.000')`);
+        assert.equal((await Finance.getSummary('', '')).saldoOther, 60000);
+        console.log('PASS: custom-method receipts appear in the finance page');
 
         await evaluate(`location.hash = '#/customers'`);
         await waitFor(`document.body.innerText.includes('Data Langganan') && document.body.innerText.includes('Tidak ada data pelanggan.')`);

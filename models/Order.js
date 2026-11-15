@@ -1,22 +1,34 @@
 import { getDbConnection, withTransaction } from '../config/db.js';
 import { updateBalance } from './Finance.js';
 import { randomUUID } from 'node:crypto';
+import { requireActive } from './PaymentMethod.js';
 const STORE_ID = 1;
 
-async function getAllOrders(date = null) {
+async function getAllOrders(filters = {}) {
     const db = await getDbConnection();
-    let sql = `SELECT o.*, c.name as member_name, c.is_member
+    if (typeof filters === 'string') filters = { start: filters, end: filters };
+    filters ||= {};
+    let sql = `SELECT o.*, c.name as member_name, c.is_member,
+               COALESCE((SELECT SUM(amount) FROM payments WHERE order_id = o.id), 0) as total_paid
                FROM orders o
                LEFT JOIN customers c ON o.customer_id = c.id
                WHERE o.store_id = ?`;
     let params = [STORE_ID];
 
-    if (date) {
-        sql += " AND DATE(o.created_at) = ?";
-        params.push(date);
+    if (filters.start) {
+        sql += ' AND DATE(o.created_at) >= DATE(?)';
+        params.push(filters.start);
+    }
+    if (filters.end) {
+        sql += ' AND DATE(o.created_at) <= DATE(?)';
+        params.push(filters.end);
+    }
+    if (filters.search) {
+        sql += ' AND (o.invoice_number LIKE ? OR o.customer_name LIKE ?)';
+        params.push(`%${filters.search}%`, `%${filters.search}%`);
     }
     sql += " ORDER BY o.created_at DESC";
-    const rows = await db.get(sql, params);
+    const rows = await db.all(sql, params);
     return rows;
 }
 
@@ -32,6 +44,11 @@ async function getOrderItems(order_id) {
         CASE WHEN oi.variant_name IS NOT NULL THEN p.name || ' - ' || oi.variant_name ELSE p.name END as item_name
         FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = ?`, [order_id]);
     return rows;
+}
+
+async function getOrderPayments(orderId) {
+    const db = await getDbConnection();
+    return db.all('SELECT id, payment_method, amount, created_at FROM payments WHERE order_id = ? AND store_id = ? ORDER BY id', [orderId, STORE_ID]);
 }
 
 async function createOrder(customer_name, items, tax_amount, discount, customer_id = 0, payment = null) {
@@ -72,11 +89,15 @@ async function createOrder(customer_name, items, tax_amount, discount, customer_
         let subtotal = 0;
         checkedItems.forEach(item => subtotal += item.subtotal);
         if (discount > subtotal) throw new Error('Diskon tidak boleh melebihi subtotal.');
-        const total_amount = (subtotal - discount) + tax_amount;
+        const total_amount = Math.round(((subtotal - discount) + tax_amount) * 100) / 100;
+        const userId = payment?.user_id ?? 1;
+        if (!await db.get('SELECT id FROM users WHERE id = ? AND store_id = ?', [userId, STORE_ID])) {
+            throw new Error('Pengguna kasir tidak ditemukan. Silakan login ulang.');
+        }
 
         const orderResult = await db.run(
-            "INSERT INTO orders (store_id, customer_id, customer_name, invoice_number, total_amount, tax_amount, discount_amount, status, payment_status) VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', 'Belum Bayar')",
-            [STORE_ID, customer_id, customer_name, invoice, total_amount, tax_amount, discount]
+            "INSERT INTO orders (store_id, user_id, customer_id, customer_name, invoice_number, total_amount, tax_amount, discount_amount, status, payment_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', 'Belum Bayar')",
+            [STORE_ID, userId, customer_id, customer_name, invoice, total_amount, tax_amount, discount]
         );
         const order_id = orderResult.lastID;
 
@@ -92,10 +113,10 @@ async function createOrder(customer_name, items, tax_amount, discount, customer_
 
         if (payment) {
             const amount = Number(payment.amount);
-            if (!Number.isFinite(amount) || amount < 0 || amount > total_amount || !['Cash', 'Transfer', 'QRIS'].includes(payment.method)) {
+            if (!Number.isFinite(amount) || amount < 0 || amount > total_amount) {
                 throw new Error('Pembayaran tidak valid.');
             }
-            if (amount > 0) await recordPayment(db, order_id, payment.user_id || 1, payment.method, amount);
+            if (amount > 0) await recordPayment(db, order_id, userId, payment.method, amount);
             if (amount >= total_amount) await db.run("UPDATE orders SET status='Selesai', payment_status='Lunas' WHERE id=?", [order_id]);
         }
 
@@ -114,12 +135,26 @@ async function addPayment(order_id, user_id, method, amount) {
 }
 
 async function recordPayment(db, order_id, user_id, method, amount) {
+    amount = Number(amount);
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isSafeInteger(Math.round(amount * 100)) || Math.abs(amount * 100 - Math.round(amount * 100)) > 0.00001) {
+        throw new Error('Nominal bayar harus lebih dari 0, maksimal dua angka desimal.');
+    }
+    const order = await db.get('SELECT * FROM orders WHERE id = ? AND store_id = ?', [order_id, STORE_ID]);
+    if (!order) throw new Error('Pesanan tidak ditemukan.');
+    if (!await db.get('SELECT id FROM users WHERE id = ? AND store_id = ?', [user_id, STORE_ID])) {
+        throw new Error('Pengguna kasir tidak ditemukan. Silakan login ulang.');
+    }
+    const paidBefore = await db.get('SELECT COALESCE(SUM(amount), 0) as paid FROM payments WHERE order_id = ?', [order_id]);
+    const remaining = Math.round((order.total_amount - paidBefore.paid) * 100);
+    if (remaining <= 0) throw new Error('Pesanan sudah lunas.');
+    if (Math.round(amount * 100) > remaining) throw new Error('Nominal bayar melebihi sisa tagihan.');
+    const selectedMethod = await requireActive(db, method);
     await db.run(
         "INSERT INTO payments (store_id, order_id, user_id, payment_method, amount) VALUES (?, ?, ?, ?, ?)",
-        [STORE_ID, order_id, user_id, method, amount]
+        [STORE_ID, order_id, user_id, selectedMethod.name, amount]
     );
 
-    const today = new Date().toISOString().split('T')[0];
+    const { today } = await db.get("SELECT DATE('now') as today");
     await updateBalance(today);
 
     const paidRow = await db.get("SELECT SUM(amount) as paid FROM payments WHERE order_id = ?", [order_id]);
@@ -127,8 +162,9 @@ async function recordPayment(db, order_id, user_id, method, amount) {
     const orderRow = await db.get("SELECT total_amount FROM orders WHERE id = ?", [order_id]);
     const total = orderRow.total_amount;
 
-    const pS = (paid >= total) ? 'Lunas' : 'DP';
-    await db.run("UPDATE orders SET payment_status = ? WHERE id = ?", [pS, order_id]);
+    const pS = (Math.round(paid * 100) >= Math.round(total * 100)) ? 'Lunas' : 'DP';
+    await db.run("UPDATE orders SET payment_status = ?, status = CASE WHEN ? = 'Lunas' THEN 'Selesai' ELSE status END WHERE id = ?", [pS, pS, order_id]);
+    return { payment_status: pS, total_paid: paid, remaining: Math.max(0, Math.round((total - paid) * 100) / 100) };
 }
 
-export { getAllOrders, getOrderById, getOrderItems, createOrder, updateStatus, addPayment };
+export { getAllOrders, getOrderById, getOrderItems, getOrderPayments, createOrder, updateStatus, addPayment };

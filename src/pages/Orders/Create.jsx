@@ -6,6 +6,8 @@ import Alert from '../../components/Alert/Alert';
 import Table from '../../components/Table/Table';
 import IconButton from '../../components/IconButton/IconButton';
 import Modal from '../../components/Modal/Modal';
+import PaymentForm from '../../components/PaymentForm/PaymentForm';
+import { useAuth } from '../../context/AuthContext';
 import { formatRp } from '../../utils/format';
 import './Create.css';
 
@@ -13,6 +15,7 @@ const ITEMS_PER_PAGE = 12; // Jumlah produk per halaman
 
 export default function CreateOrder() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   
@@ -27,6 +30,8 @@ export default function CreateOrder() {
   const [error, setError] = useState('');
   const [variantProduct, setVariantProduct] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -37,16 +42,11 @@ export default function CreateOrder() {
         ]);
         setProducts(resProd || []);
         setCategories(resCat || []);
-      } catch (e) {
+      } catch {
         setError('Gagal memuat produk dan kategori.');
       }
     })();
   }, []);
-
-  // Reset ke halaman 1 setiap kali melakukan pencarian atau ganti kategori
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search, selectedCategory]);
 
   const getImageUrl = (imgName) => {
     return imgName && imgName !== 'default.png'
@@ -109,9 +109,9 @@ export default function CreateOrder() {
     setCart((prevCart) => prevCart.filter((item) => item.key !== key));
   };
 
-  const subtotal = cart.reduce((acc, item) => acc + item.subtotal, 0);
+  const subtotal = Math.round(cart.reduce((acc, item) => acc + item.subtotal, 0) * 100) / 100;
   const discValue = parseFloat(discount) || 0;
-  const grandTotal = Math.max(0, subtotal - discValue);
+  const grandTotal = Math.max(0, Math.round((subtotal - discValue) * 100) / 100);
 
   const handleProcessOrder = async () => {
     if (processing) return;
@@ -124,7 +124,14 @@ export default function CreateOrder() {
       return;
     }
 
+    setPaymentError('');
+    setPaymentOpen(true);
+  };
+
+  const submitOrder = async ({ amount, method }) => {
+    if (processing) return;
     setProcessing(true);
+    setPaymentError('');
     setError('');
     try {
       const payload = {
@@ -132,8 +139,9 @@ export default function CreateOrder() {
         items: cart,
         discount: discValue,
         grandTotal,
-        amountPaid: grandTotal,
-        paymentMethod: 'Cash',
+        amountPaid: amount,
+        paymentMethod: method,
+        userId: user?.id,
       };
 
       const orderId = await window.api.createOrder(payload);
@@ -141,10 +149,10 @@ export default function CreateOrder() {
         alert('Pesanan berhasil diproses!');
         navigate('/orders');
       } else {
-        setError(orderId?.message || 'Gagal memproses pesanan.');
+        setPaymentError(orderId?.message || 'Gagal memproses pesanan.');
       }
-    } catch (e) {
-      setError('Terjadi kesalahan sistem.');
+    } catch {
+      setPaymentError('Terjadi kesalahan sistem saat menyimpan pembayaran.');
     } finally {
       setProcessing(false);
     }
@@ -216,7 +224,7 @@ export default function CreateOrder() {
               className="input-field" 
               style={{ flex: 1, margin: 0 }}
               value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
+              onChange={(e) => { setSelectedCategory(e.target.value); setCurrentPage(1); }}
             >
               <option value="">Semua Kategori</option>
               {categories.map(c => (
@@ -229,7 +237,7 @@ export default function CreateOrder() {
               className="input-field"
               placeholder="Cari nama atau scan barcode..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
               style={{ flex: 2, margin: 0 }}
             />
           </div>
@@ -348,6 +356,9 @@ export default function CreateOrder() {
           </Button>
         </div>
       </div>
+      <Modal id="checkout-payment" isOpen={paymentOpen} onClose={() => { if (!processing) setPaymentOpen(false); }} title="Pembayaran Pesanan" maxWidth={500}>
+        <PaymentForm total={grandTotal} allowUnpaid busy={processing} error={paymentError} onSubmit={submitOrder} />
+      </Modal>
       <Modal isOpen={!!variantProduct} onClose={() => setVariantProduct(null)} title={`Pilih Varian: ${variantProduct?.name || ''}`} maxWidth={550}>
         <div className="variant-options">
           {variantProduct?.variants.map(variant => (
