@@ -51,9 +51,18 @@ app.whenReady().then(async () => {
         app.setPath('userData', profile);
         await inisialisasiDatabase();
         db = await getDbConnection();
-        const { createServer } = await import('vite');
-        server = await createServer({ root: path.resolve(__dirname, '..'), server: { host: '127.0.0.1', port: 0 } });
-        await server.listen();
+        const express = require('express');
+        const webApp = express();
+        const distPath = path.resolve(__dirname, '../dist');
+        await fs.access(path.join(distPath, 'index.html'));
+        webApp.use(express.static(distPath));
+        const httpServer = await new Promise(resolve => {
+            const listening = webApp.listen(0, '127.0.0.1', () => resolve(listening));
+        });
+        server = {
+            resolvedUrls: { local: [`http://127.0.0.1:${httpServer.address().port}/`] },
+            close: () => new Promise(resolve => httpServer.close(resolve)),
+        };
         ipcMain.handle('check-activation', () => true);
         ipcMain.handle('get-settings', () => ({ name: 'Test' }));
         ipcMain.handle('get-ip-address', () => '127.0.0.1');
@@ -132,7 +141,7 @@ app.whenReady().then(async () => {
         await waitFor(`document.querySelectorAll('.qty-stepper').length === 2`);
         await evaluate(`document.querySelectorAll('.qty-stepper')[1].querySelectorAll('button')[1].click()`);
         await waitFor(`document.querySelectorAll('.qty-stepper')[1].textContent.includes('2')`);
-        await clickButton('Proses Pembayaran');
+        await clickButton('Bayar Sekarang');
         await waitFor(`!!document.querySelector('#checkout-payment #payment-method option[value="Cash"]')`);
         await fill('#payment-amount', 200000);
         await waitFor(`document.querySelector('#checkout-payment').innerText.includes('30.000')`);
@@ -158,7 +167,7 @@ app.whenReady().then(async () => {
         await evaluate(`document.querySelector('.product-tile').click()`);
         await waitFor(`document.querySelectorAll('.variant-option').length === 2`);
         await evaluate(`document.querySelectorAll('.variant-option')[0].click()`);
-        await clickButton('Proses Pembayaran');
+        await clickButton('Bayar Sekarang');
         await waitFor(`!!document.querySelector('#payment-method option[value="DANA"]')`);
         await evaluate(`document.querySelector('#payment-method').value = 'DANA'; document.querySelector('#payment-method').dispatchEvent(new Event('change', { bubbles: true }))`);
         await fill('#payment-amount', 20000);
@@ -174,7 +183,11 @@ app.whenReady().then(async () => {
         await fill('#payment-amount', 50000);
         await clickButton('Simpan Pembayaran');
         await waitFor(`document.querySelector('#order-payment').innerText.includes('tidak boleh melebihi tagihan')`);
-        await fill('#payment-amount', 40000);
+        await fill('#payment-amount', 15000);
+        await clickButton('Tambah Pembayaran');
+        await waitFor(`document.querySelectorAll('.payment-entry').length === 2`);
+        await fill('#payment-amount-1', 30000);
+        await waitFor(`document.querySelector('#order-payment').innerText.includes('5.000')`);
         if (process.env.APP_JS_UI_SCREENSHOTS) {
             await new Promise(resolve => setTimeout(resolve, 350));
             await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'payment-custom.png'), (await window.webContents.capturePage()).toPNG());
@@ -185,11 +198,12 @@ app.whenReady().then(async () => {
         assert.equal((await db.get('SELECT SUM(amount) as total FROM payments WHERE order_id = ?', [depositOrder.id])).total, 60000);
         await evaluate(`Array.from(document.querySelectorAll('tr')).find(row => row.innerText.includes(${JSON.stringify(depositOrder.invoice_number)})).querySelector('button[title="Detail"]').click()`);
         await waitFor(`document.body.innerText.includes('Pembayaran Tercatat') && document.body.innerText.includes('DANA')`);
-        assert.equal((await Order.getOrderPayments(depositOrder.id)).length, 2);
+        assert.equal((await Order.getOrderPayments(depositOrder.id)).length, 3);
+        assert.deepEqual((await Order.getOrderPayments(depositOrder.id)).map(entry => entry.amount), [20000, 15000, 25000]);
         console.log('PASS: custom-method deposit, excessive-payment error and later settlement through real IPC');
         await evaluate(`location.hash = '#/finance'`);
-        await waitFor(`document.body.innerText.includes('DANA') && document.body.innerText.includes('60.000')`);
-        assert.equal((await Finance.getSummary('', '')).saldoOther, 60000);
+        await waitFor(`document.body.innerText.includes('DANA') && document.body.innerText.includes('35.000')`);
+        assert.equal((await Finance.getSummary('', '')).saldoOther, 35000);
         console.log('PASS: custom-method receipts appear in the finance page');
 
         await evaluate(`location.hash = '#/customers'`);
@@ -232,6 +246,37 @@ app.whenReady().then(async () => {
         await waitFor(`document.body.innerText.includes('Tidak ada data pelanggan.')`);
         assert.equal((await Customer.getCustomers()).length, 0);
         console.log('PASS: customer delete removes the selected row');
+
+        await evaluate(`location.hash = '#/orders/create'`);
+        await waitFor(`document.querySelectorAll('.product-tile').length === 1`);
+        await evaluate(`document.querySelector('.product-tile').click()`);
+        await waitFor(`document.querySelectorAll('.variant-option').length === 2`);
+        await evaluate(`document.querySelectorAll('.variant-option')[0].click()`);
+        await clickButton('Simpan Pesanan (Bayar Nanti)');
+        await waitFor(`document.body.innerText.includes('Riwayat Pesanan') && !!document.querySelector('button[title="Bayar"]')`);
+        assert.match(await evaluate(`document.querySelector('button[title="Bayar"]').textContent`), /Bayar/);
+        const unpaid = await db.get('SELECT * FROM orders ORDER BY id DESC LIMIT 1');
+        assert.equal(unpaid.payment_status, 'Belum Bayar');
+        assert.equal((await Order.getOrderPayments(unpaid.id)).length, 0);
+        console.log('PASS: save unpaid order exposes a labeled Bayar button');
+
+        const mainWindow = window;
+        window = new BrowserWindow({ show: false, width: 1100, height: 850, webPreferences: {
+            preload: path.resolve(__dirname, 'fixtures/legacy-preload.cjs'), session: isolatedSession, backgroundThrottling: false, offscreen: true,
+        } });
+        await window.loadURL(`${server.resolvedUrls.local[0]}?legacy-api=1#/orders/create`);
+        await waitFor(`document.querySelectorAll('.product-tile').length === 1`);
+        await evaluate(`document.querySelector('.product-tile').click()`);
+        await waitFor(`document.querySelectorAll('.variant-option').length === 2`);
+        await evaluate(`document.querySelectorAll('.variant-option')[0].click()`);
+        await clickButton('Bayar Sekarang');
+        await waitFor(`document.querySelector('#checkout-payment')?.innerText.includes('Modul pembayaran belum dimuat')`);
+        assert.ok(await evaluate(`document.body.innerText.includes('Kasir / Transaksi Baru')`));
+        await evaluate(`location.hash = '#/settings'`);
+        await waitFor(`document.body.innerText.includes('Metode Pembayaran') && document.body.innerText.includes('Modul pembayaran belum dimuat')`);
+        window.destroy();
+        window = mainWindow;
+        console.log('PASS: old payment bridge shows recovery instructions instead of a blank page');
     } catch (error) {
         console.error(error);
         if (window) console.error('UI state:', await evaluate(`JSON.stringify({ url: location.href, body: document.body.innerText, session: localStorage.getItem('pos_session') })`));
@@ -242,6 +287,7 @@ app.whenReady().then(async () => {
         if (db) await db.close();
         // The profile is temporary; Chromium may retain file handles until exit.
         await new Promise(resolve => setTimeout(resolve, 100));
-        app.exit(process.exitCode || 0);
+        if (process.exitCode) app.exit(process.exitCode);
+        else app.quit();
     }
 });

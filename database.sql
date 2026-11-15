@@ -163,6 +163,7 @@ CREATE TABLE IF NOT EXISTS payments (
   order_id INTEGER NOT NULL,
   user_id INTEGER NOT NULL,
   payment_method TEXT NOT NULL,
+  payment_method_id INTEGER REFERENCES payment_methods(id),
   amount DECIMAL(15,2) NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   store_id INTEGER NOT NULL,

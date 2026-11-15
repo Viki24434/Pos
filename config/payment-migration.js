@@ -33,6 +33,15 @@ async function migratePayments(db) {
     await db.run(`INSERT OR IGNORE INTO payment_methods (store_id, name, kind)
         SELECT DISTINCT store_id, payment_method, CASE payment_method
             WHEN 'Cash' THEN 'cash' WHEN 'Transfer' THEN 'transfer' WHEN 'QRIS' THEN 'qris' ELSE 'other' END FROM payments`);
+    const paymentColumns = await db.all('PRAGMA table_info(payments)');
+    if (!paymentColumns.some(column => column.name === 'payment_method_id')) {
+        await db.exec('ALTER TABLE payments ADD COLUMN payment_method_id INTEGER REFERENCES payment_methods(id)');
+    }
+    await db.run(`UPDATE payments SET payment_method_id = (
+        SELECT id FROM payment_methods WHERE store_id = payments.store_id
+            AND name = payments.payment_method COLLATE NOCASE
+    ) WHERE payment_method_id IS NULL`);
+    await db.exec('CREATE INDEX IF NOT EXISTS idx_payments_method_id ON payments(payment_method_id)');
     const columns = await db.all('PRAGMA table_info(finance)');
     if (!columns.some(column => column.name === 'other_revenue')) {
         await db.exec('ALTER TABLE finance ADD COLUMN other_revenue DECIMAL(15,2) DEFAULT 0.00');

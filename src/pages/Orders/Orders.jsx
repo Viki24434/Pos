@@ -62,12 +62,12 @@ export default function Orders() {
     setPayment({ open: true, orderId: order.id, sisa: Math.max(0, Math.round((order.total_amount - (order.total_paid || 0)) * 100) / 100) });
   };
 
-  const submitPayment = async ({ amount, method }) => {
+  const submitPayment = async ({ amount, method, payments }) => {
     if (paying) return;
     setPaying(true);
     setPaymentError('');
     try {
-      const result = await window.api.processPayment({ id: payment.orderId, total: amount, paymentMethod: method, userId: user?.id });
+      const result = await window.api.processPayment({ id: payment.orderId, total: amount, paymentMethod: method, payments, userId: user?.id });
       if (!result?.success) throw new Error(result?.message || 'Gagal memproses pembayaran.');
       setPayment(previous => ({ ...previous, open: false }));
       await loadOrders();
@@ -77,6 +77,9 @@ export default function Orders() {
 
   const orderColumns = [
     { key: 'invoice_number', label: 'No. Invoice', cellStyle: { fontWeight: 700, color: 'var(--primary)' } },
+    { key: 'payment_action', label: 'Pembayaran', render: order => Math.round((order.total_amount - (order.total_paid || 0)) * 100) > 0
+      ? <Button variant="success" icon="fas fa-wallet" title="Bayar" disabled={paying} onClick={() => openPayment(order)}>Bayar</Button>
+      : <StatusBadge status="Lunas" /> },
     { key: 'customer_name', label: 'Pelanggan', render: (o) => <b>{o.customer_name}</b> },
     { key: 'total_amount', label: 'Total Tagihan', render: (o) => formatRp(o.total_amount) },
     { key: 'total_paid', label: 'Terbayar', render: o => formatRp(o.total_paid || 0) },
@@ -127,9 +130,6 @@ export default function Orders() {
           renderActions={(o) => (
             <div className="row-actions">
               <IconButton icon="fas fa-eye" variant="primary" title="Detail" onClick={() => openDetail(o.id, o.invoice_number)} />
-              {o.payment_status !== 'Lunas' && (
-                <IconButton icon="fas fa-wallet" variant="success" title="Bayar" onClick={() => openPayment(o)} />
-              )}
             </div>
           )}
         />

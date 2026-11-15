@@ -3,6 +3,7 @@ import Input from '../Input/Input';
 import Button from '../Button/Button';
 import Table from '../Table/Table';
 import Alert from '../Alert/Alert';
+import { fetchPaymentMethods } from '../../utils/paymentMethods';
 
 export default function PaymentMethods() {
   const [methods, setMethods] = useState([]);
@@ -11,9 +12,9 @@ export default function PaymentMethods() {
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let active = true;
-    window.api.getPaymentMethods({ includeInactive: true }).then(rows => {
+    fetchPaymentMethods({ includeInactive: true }).then(rows => {
       if (active) setMethods(rows || []);
-    }).catch(() => { if (active) setError('Gagal memuat metode bayar.'); });
+    }).catch(loadError => { if (active) setError(loadError.message || 'Gagal memuat metode bayar.'); });
     return () => { active = false; };
   }, []);
 
@@ -24,7 +25,7 @@ export default function PaymentMethods() {
     try {
       const result = await operation();
       if (!result?.success) throw new Error(result?.message || 'Gagal menyimpan metode bayar.');
-      setMethods(await window.api.getPaymentMethods({ includeInactive: true }));
+      setMethods(await fetchPaymentMethods({ includeInactive: true }));
       setName('');
     } catch (saveError) { setError(saveError.message); }
     finally { setBusy(false); }

@@ -6,7 +6,7 @@
   "main": "electron/main.cjs",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "test:ui": "electron tests/ui-smoke.cjs",
+    "test:ui": "vite build --outDir dist && electron tests/ui-smoke.cjs",
     "dev": "concurrently \"vite\" \"wait-on http://localhost:2026 && electron .\"",
     "build": "vite build",
     "lint": "eslint .",

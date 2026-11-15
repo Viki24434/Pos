@@ -17,6 +17,7 @@ test('payments, custom methods and existing database upgrade', async t => {
     let schema = await fs.readFile(new URL('../database.sql', import.meta.url), 'utf8');
     schema = schema.replace('  payment_method TEXT NOT NULL,', "  payment_method TEXT CHECK(payment_method IN ('Cash','Transfer','QRIS')) NOT NULL,")
         .replace(/ {2}other_revenue[^\n]*\n/, '')
+        .replace(/ {2}payment_method_id[^\n]*\n/, '')
         .replace(/CREATE TABLE IF NOT EXISTS payment_methods \([\s\S]*?INSERT OR IGNORE INTO payment_methods[^;]*;/, '');
     await db.exec(schema);
     await db.run("INSERT INTO users (id, store_id, username, password, role) VALUES (7, 1, 'kasir-test', 'test', 'Kasir')");
@@ -31,6 +32,7 @@ test('payments, custom methods and existing database upgrade', async t => {
         const old = await db.get('SELECT * FROM payments WHERE id = 80');
         assert.equal(old.amount, 25000);
         assert.equal(old.created_at, '2026-01-02 09:00:00');
+        assert.equal((await db.get('SELECT name FROM payment_methods WHERE id = ?', [old.payment_method_id])).name, 'Transfer');
         assert.equal((await db.get("SELECT seq FROM sqlite_sequence WHERE name = 'payments'")).seq, 100);
         assert.equal((await db.all('PRAGMA foreign_key_check')).length, 0);
         assert.ok((await db.all('PRAGMA index_list(payments)')).some(index => index.name === 'idx_payments_order_id'));
@@ -110,5 +112,38 @@ test('payments, custom methods and existing database upgrade', async t => {
         assert.ok(summary.rekap.some(row => row.other_in === 100000));
         assert.equal(summary.totalPiutang, 75000);
         await PaymentMethod.setActive(dana.id, true);
+    });
+
+    await t.test('one checkout can split payment across several database methods', async () => {
+        const id = await Order.createOrder('Gabungan', [item], 0, 0, 0, { user_id: 7, payments: [
+            { method: 'Cash', amount: 40000 }, { method: 'DANA', amount: 60000 },
+        ] });
+        const entries = await Order.getOrderPayments(id);
+        assert.equal(entries.length, 2);
+        assert.deepEqual(entries.map(entry => entry.amount), [40000, 60000]);
+        assert.ok(entries.every(entry => entry.payment_method_id > 0));
+        assert.equal((await Order.getOrderById(id)).payment_status, 'Lunas');
+    });
+
+    await t.test('invalid split checkout rolls back every payment, product stock and order', async () => {
+        const stock = (await Product.getById(created.lastID)).stock;
+        const { count } = await db.get('SELECT COUNT(*) as count FROM orders');
+        await assert.rejects(Order.createOrder('Gagal Gabungan', [item], 0, 0, 0, { user_id: 7, payments: [
+            { method: 'Cash', amount: 40000 }, { method: 'Tidak tersedia', amount: 60000 },
+        ] }), /masih aktif/);
+        assert.equal((await Product.getById(created.lastID)).stock, stock);
+        assert.equal((await db.get('SELECT COUNT(*) as count FROM orders')).count, count);
+    });
+
+    await t.test('several later payments are atomic and can be followed by another settlement', async () => {
+        const id = await Order.createOrder('Gabungan Berikutnya', [item], 0, 0, 0, { amount: 0, user_id: 7 });
+        await assert.rejects(Order.addPayments(id, 7, [{ method: 'Cash', amount: 60000 }, { method: 'Transfer', amount: 50000 }]), /melebihi/);
+        assert.equal((await Order.getOrderPayments(id)).length, 0);
+        const result = await Order.addPayments(id, 7, [{ method: 'Cash', amount: 25000 }, { method: 'Transfer', amount: 25000 }]);
+        assert.equal(result.payment_status, 'DP');
+        assert.equal(result.remaining, 50000);
+        await Order.addPayment(id, 7, 'QRIS', 50000);
+        assert.equal((await Order.getOrderPayments(id)).length, 3);
+        assert.equal((await Order.getOrderById(id)).payment_status, 'Lunas');
     });
 });

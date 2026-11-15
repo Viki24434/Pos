@@ -48,7 +48,7 @@ async function getOrderItems(order_id) {
 
 async function getOrderPayments(orderId) {
     const db = await getDbConnection();
-    return db.all('SELECT id, payment_method, amount, created_at FROM payments WHERE order_id = ? AND store_id = ? ORDER BY id', [orderId, STORE_ID]);
+    return db.all('SELECT id, payment_method_id, payment_method, amount, created_at FROM payments WHERE order_id = ? AND store_id = ? ORDER BY id', [orderId, STORE_ID]);
 }
 
 async function createOrder(customer_name, items, tax_amount, discount, customer_id = 0, payment = null) {
@@ -112,12 +112,15 @@ async function createOrder(customer_name, items, tax_amount, discount, customer_
         }
 
         if (payment) {
-            const amount = Number(payment.amount);
-            if (!Number.isFinite(amount) || amount < 0 || amount > total_amount) {
-                throw new Error('Pembayaran tidak valid.');
+            let entries = payment.payments;
+            if (entries === undefined) {
+                const amount = Number(payment.amount);
+                if (!Number.isFinite(amount) || amount < 0 || amount > total_amount) throw new Error('Pembayaran tidak valid.');
+                entries = amount > 0 ? [{ method: payment.method, amount }] : [];
             }
-            if (amount > 0) await recordPayment(db, order_id, userId, payment.method, amount);
-            if (amount >= total_amount) await db.run("UPDATE orders SET status='Selesai', payment_status='Lunas' WHERE id=?", [order_id]);
+            validatePaymentList(entries, true);
+            for (const entry of entries) await recordPayment(db, order_id, userId, entry.method, entry.amount);
+            if (total_amount === 0) await db.run("UPDATE orders SET status='Selesai', payment_status='Lunas' WHERE id=?", [order_id]);
         }
 
         return order_id;
@@ -131,7 +134,22 @@ async function updateStatus(id, status) {
 }
 
 async function addPayment(order_id, user_id, method, amount) {
-    return withTransaction(db => recordPayment(db, order_id, user_id, method, amount));
+    return addPayments(order_id, user_id, [{ method, amount }]);
+}
+
+function validatePaymentList(payments, allowEmpty = false) {
+    if (!Array.isArray(payments) || (!allowEmpty && !payments.length) || payments.length > 20 || payments.some(entry => !entry || typeof entry !== 'object')) {
+        throw new Error('Daftar pembayaran tidak valid. Maksimal 20 pembayaran sekaligus.');
+    }
+}
+
+async function addPayments(orderId, userId, payments) {
+    validatePaymentList(payments);
+    return withTransaction(async db => {
+        let result;
+        for (const entry of payments) result = await recordPayment(db, orderId, userId, entry.method, entry.amount);
+        return result;
+    });
 }
 
 async function recordPayment(db, order_id, user_id, method, amount) {
@@ -150,8 +168,8 @@ async function recordPayment(db, order_id, user_id, method, amount) {
     if (Math.round(amount * 100) > remaining) throw new Error('Nominal bayar melebihi sisa tagihan.');
     const selectedMethod = await requireActive(db, method);
     await db.run(
-        "INSERT INTO payments (store_id, order_id, user_id, payment_method, amount) VALUES (?, ?, ?, ?, ?)",
-        [STORE_ID, order_id, user_id, selectedMethod.name, amount]
+        "INSERT INTO payments (store_id, order_id, user_id, payment_method_id, payment_method, amount) VALUES (?, ?, ?, ?, ?, ?)",
+        [STORE_ID, order_id, user_id, selectedMethod.id, selectedMethod.name, amount]
     );
 
     const { today } = await db.get("SELECT DATE('now') as today");
@@ -167,4 +185,4 @@ async function recordPayment(db, order_id, user_id, method, amount) {
     return { payment_status: pS, total_paid: paid, remaining: Math.max(0, Math.round((total - paid) * 100) / 100) };
 }
 
-export { getAllOrders, getOrderById, getOrderItems, getOrderPayments, createOrder, updateStatus, addPayment };
+export { getAllOrders, getOrderById, getOrderItems, getOrderPayments, createOrder, updateStatus, addPayment, addPayments };

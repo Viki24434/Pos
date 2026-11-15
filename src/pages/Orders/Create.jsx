@@ -113,22 +113,26 @@ export default function CreateOrder() {
   const discValue = parseFloat(discount) || 0;
   const grandTotal = Math.max(0, Math.round((subtotal - discValue) * 100) / 100);
 
-  const handleProcessOrder = async () => {
-    if (processing) return;
+  const validateCart = () => {
+    if (processing) return false;
     if (cart.length === 0) {
       alert('Keranjang masih kosong!');
-      return;
+      return false;
     }
     if (!Number.isFinite(Number(discount)) || Number(discount) < 0 || Number(discount) > subtotal) {
       setError('Diskon harus antara 0 dan subtotal.');
-      return;
+      return false;
     }
+    return true;
+  };
 
+  const handleProcessOrder = () => {
+    if (!validateCart()) return;
     setPaymentError('');
     setPaymentOpen(true);
   };
 
-  const submitOrder = async ({ amount, method }) => {
+  const submitOrder = async ({ amount, method, payments }) => {
     if (processing) return;
     setProcessing(true);
     setPaymentError('');
@@ -141,18 +145,21 @@ export default function CreateOrder() {
         grandTotal,
         amountPaid: amount,
         paymentMethod: method,
+        payments,
         userId: user?.id,
       };
 
       const orderId = await window.api.createOrder(payload);
       if (typeof orderId === 'number' && orderId > 0) {
-        alert('Pesanan berhasil diproses!');
+        alert(amount > 0 ? 'Pesanan dan pembayaran berhasil disimpan.' : 'Pesanan disimpan. Klik Bayar pada daftar pesanan untuk mencatat pembayaran.');
         navigate('/orders');
       } else {
-        setPaymentError(orderId?.message || 'Gagal memproses pesanan.');
+        if (paymentOpen) setPaymentError(orderId?.message || 'Gagal memproses pesanan.');
+        else setError(orderId?.message || 'Gagal menyimpan pesanan.');
       }
     } catch {
-      setPaymentError('Terjadi kesalahan sistem saat menyimpan pembayaran.');
+      if (paymentOpen) setPaymentError('Terjadi kesalahan sistem saat menyimpan pembayaran.');
+      else setError('Gagal menyimpan pesanan.');
     } finally {
       setProcessing(false);
     }
@@ -352,7 +359,10 @@ export default function CreateOrder() {
           </div>
 
           <Button variant="success" fullWidth icon="fas fa-check-circle" disabled={processing} onClick={handleProcessOrder} className="process-order-btn">
-            {processing ? 'Memproses...' : 'Proses Pembayaran'}
+            {processing ? 'Menyimpan...' : 'Bayar Sekarang'}
+          </Button>
+          <Button variant="secondary" fullWidth disabled={processing} style={{ marginTop: 10 }} onClick={() => { if (validateCart()) submitOrder({ amount: 0, method: '', payments: [] }); }}>
+            Simpan Pesanan (Bayar Nanti)
           </Button>
         </div>
       </div>
