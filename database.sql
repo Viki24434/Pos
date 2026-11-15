@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS customers (
   phone VARCHAR(20) DEFAULT NULL,
   address TEXT DEFAULT NULL,
   is_member INTEGER DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'Umum' CHECK(status IN ('Umum', 'Member', 'VIP')),
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

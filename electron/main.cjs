@@ -59,7 +59,7 @@ const Order = require('../models/Order');
 const Report = require('../models/Report');
 const Category = require('../models/Category');
 const Unit = require('../models/Unit');
-const Customer = require('../models/Customer');
+const { registerCustomerHandlers } = require('./customer-handlers.cjs');
 const User = require('../models/User');
 const Finance = require('../models/Finance');
 
@@ -122,7 +122,7 @@ ipcMain.handle('store-income', async (event, data) => {
 ipcMain.handle('store-expenditure', async (event, data) => {
     try { await Finance.storeExpenditure(data); return true; } catch (e) { return false; }
 });
-ipcMain.handle('get-customers', async () => await Customer.getCustomers());
+registerCustomerHandlers(ipcMain);
 ipcMain.handle('get-users', async () => await User.getAll());
 
 ipcMain.handle('auth-login', async (event, credentials) => {

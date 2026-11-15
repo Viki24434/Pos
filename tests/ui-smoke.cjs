@@ -9,6 +9,8 @@ process.env.APP_JS_DB_PATH = ':memory:';
 const { getDbConnection, inisialisasiDatabase } = require('../config/db.js');
 const Product = require('../models/Product.js');
 const Order = require('../models/Order.js');
+const Customer = require('../models/Customer.js');
+const { registerCustomerHandlers } = require('../electron/customer-handlers.cjs');
 
 let server;
 let window;
@@ -58,6 +60,7 @@ app.whenReady().then(async () => {
         ipcMain.handle('get-categories', () => []);
         ipcMain.handle('get-units', () => []);
         ipcMain.handle('get-orders', () => []);
+        registerCustomerHandlers(ipcMain);
         ipcMain.handle('create-product', async (_event, payload) => {
             savedPayload = payload;
             try { await Product.create(payload); return true; }
@@ -141,6 +144,47 @@ app.whenReady().then(async () => {
         assert.equal(order.payment_status, 'Lunas');
         assert.equal((await Order.getOrderItems(order.id)).length, 2);
         console.log('PASS: cashier keeps variants separate, changes quantities, and completes paid checkout');
+
+        await evaluate(`location.hash = '#/customers'`);
+        await waitFor(`document.body.innerText.includes('Data Langganan') && document.body.innerText.includes('Tidak ada data pelanggan.')`);
+        await clickButton('Tambah Pelanggan');
+        await waitFor(`!!document.querySelector('#modal-customer')`);
+        await fill('#customer-name', '   ');
+        await clickButton('Simpan');
+        await waitFor(`document.querySelector('#modal-customer').innerText.includes('Nama pelanggan wajib diisi.')`);
+        await fill('#customer-name', 'Pelanggan UI');
+        await fill('#customer-phone', '08123456789');
+        await evaluate(`document.querySelector('#customer-status').value = 'VIP'; document.querySelector('#customer-status').dispatchEvent(new Event('change', { bubbles: true }))`);
+        await clickButton('Simpan');
+        await waitFor(`!document.querySelector('#modal-customer') && document.body.innerText.includes('Pelanggan UI') && document.body.innerText.includes('VIP')`);
+        let [customer] = await Customer.getCustomers();
+        assert.equal(customer.status, 'VIP');
+        assert.equal(customer.is_member, 1);
+        console.log('PASS: customer add button, modal, validation, VIP save and table display');
+
+        await evaluate(`document.querySelector('button[title="Edit"]').click()`);
+        await waitFor(`!!document.querySelector('#modal-customer')`);
+        assert.equal(await evaluate(`document.querySelector('#customer-status').value`), 'VIP');
+        await fill('#customer-name', 'Pelanggan Diedit');
+        await evaluate(`document.querySelector('#customer-status').value = 'Umum'; document.querySelector('#customer-status').dispatchEvent(new Event('change', { bubbles: true }))`);
+        await clickButton('Simpan');
+        await waitFor(`!document.querySelector('#modal-customer') && document.body.innerText.includes('Pelanggan Diedit') && document.body.innerText.includes('Umum')`);
+        [customer] = await Customer.getCustomers();
+        assert.equal(customer.is_member, 0);
+        assert.equal(customer.status, 'Umum');
+        await fill('input[placeholder="Cari nama atau no. telepon..."]', 'Tidak cocok');
+        await waitFor(`document.body.innerText.includes('Tidak ada data pelanggan.')`);
+        await fill('input[placeholder="Cari nama atau no. telepon..."]', '08123456789');
+        await waitFor(`document.body.innerText.includes('Pelanggan Diedit')`);
+        if (process.env.APP_JS_UI_SCREENSHOTS) {
+            await new Promise(resolve => setTimeout(resolve, 350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'customers.png'), (await window.webContents.capturePage()).toPNG());
+        }
+        console.log('PASS: customer edit preserves status and phone search works');
+        await evaluate(`window.confirm = () => true; document.querySelector('button[title="Hapus"]').click()`);
+        await waitFor(`document.body.innerText.includes('Tidak ada data pelanggan.')`);
+        assert.equal((await Customer.getCustomers()).length, 0);
+        console.log('PASS: customer delete removes the selected row');
     } catch (error) {
         console.error(error);
         if (window) console.error('UI state:', await evaluate(`JSON.stringify({ url: location.href, body: document.body.innerText, session: localStorage.getItem('pos_session') })`));

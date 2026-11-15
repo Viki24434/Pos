@@ -67,6 +67,14 @@ async function getDbConnection() {
     return dbInstance;
 }
 
+async function migrateCustomerStatus(db) {
+    const columns = await db.all('PRAGMA table_info(customers)');
+    if (columns.length && !columns.some(column => column.name === 'status')) {
+        await db.exec("ALTER TABLE customers ADD COLUMN status TEXT NOT NULL DEFAULT 'Umum' CHECK(status IN ('Umum', 'Member', 'VIP'))");
+        await db.run("UPDATE customers SET status = CASE WHEN is_member = 1 THEN 'Member' ELSE 'Umum' END");
+    }
+}
+
 async function inisialisasiDatabase() {
     try {
         const db = await getDbConnection();
@@ -125,6 +133,7 @@ async function inisialisasiDatabase() {
         }
 
         await migrateProductVariants(db);
+        await migrateCustomerStatus(db);
         console.log('Database SQLite siap digunakan.');
     } catch (error) {
         console.error('Gagal inisialisasi database SQLite:', error.message);
@@ -135,5 +144,6 @@ export {
     getDbConnection,
     inisialisasiDatabase,
     migrateProductVariants,
+    migrateCustomerStatus,
     withTransaction
 };

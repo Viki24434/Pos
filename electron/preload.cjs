@@ -41,6 +41,9 @@ contextBridge.exposeInMainWorld('api', {
 
   // ===== Customers =====
   getCustomers: () => ipcRenderer.invoke('get-customers'),
+  createCustomer: (data) => ipcRenderer.invoke('create-customer', data),
+  updateCustomer: (id, data) => ipcRenderer.invoke('update-customer', id, data),
+  deleteCustomer: (id) => ipcRenderer.invoke('delete-customer', id),
 
   // ===== Users =====
   getUsers: () => ipcRenderer.invoke('get-users'),
