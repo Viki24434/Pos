@@ -6,6 +6,8 @@ import process from 'node:process';
 process.env.APP_JS_DB_PATH = ':memory:';
 const { getDbConnection, migrateCustomerStatus } = await import('../config/db.js');
 const Customer = await import('../models/Customer.js');
+const Order = await import('../models/Order.js');
+const Product = await import('../models/Product.js');
 
 test('customer data and legacy membership migration', async t => {
     const db = await getDbConnection();
@@ -67,5 +69,23 @@ test('customer data and legacy membership migration', async t => {
         assert.equal((await Customer.deleteCustomer(id)).changes, 1);
         assert.equal((await Customer.getCustomers()).length, before - 1);
         await assert.rejects(Customer.deleteCustomer(id), /tidak ditemukan/);
+    });
+
+    await t.test('orders link to VIP customers and use their saved name', async () => {
+        const vip = await Customer.addCustomer({ name: 'Pelanggan VIP', status: 'VIP' });
+        const product = await Product.create({ name: 'Test Order VIP', price: 10000, stock: 5 });
+        const items = [{ product_id: product.lastID, price: 10000, qty: 1 }];
+        const orderId = await Order.createOrder('Nama palsu', items, 0, 0, vip.lastID);
+        const order = await Order.getOrderById(orderId);
+        assert.equal(order.customer_id, vip.lastID);
+        assert.equal(order.customer_name, 'Pelanggan VIP');
+        assert.equal((await Order.getAllOrders({ search: 'Pelanggan VIP' }))[0].customer_status, 'VIP');
+        const stock = (await Product.getById(product.lastID)).stock;
+        await assert.rejects(Order.createOrder('Tidak valid', items, 0, 0, 99999), /Pelanggan tidak ditemukan/);
+        const other = await db.run("INSERT INTO customers (store_id, name, status) VALUES (2, 'VIP Toko Lain', 'VIP')");
+        await assert.rejects(Order.createOrder('Tidak valid', items, 0, 0, other.lastID), /Pelanggan tidak ditemukan/);
+        assert.equal((await Product.getById(product.lastID)).stock, stock);
+        const general = await Order.createOrder('Nama Manual', items, 0, 0, 0);
+        assert.equal((await Order.getOrderById(general)).customer_name, 'Nama Manual');
     });
 });

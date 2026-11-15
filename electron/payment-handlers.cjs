@@ -14,7 +14,7 @@ function registerPaymentHandlers(ipcMain) {
     ipcMain.handle('create-order', async (_event, data) => {
         try {
             const items = data.items.map(item => ({ ...item, product_id: item.product_id ?? item.id }));
-            return await Order.createOrder(data.customerName || 'Umum', items, 0, data.discount ?? 0, 0,
+            return await Order.createOrder(data.customerName || 'Umum', items, 0, data.discount ?? 0, data.customerId ?? 0,
                 { amount: data.amountPaid ?? 0, method: data.paymentMethod || 'Cash', payments: data.payments, user_id: data.userId ?? 1 });
         } catch (error) { return { success: false, message: error.message || 'Gagal membuat pesanan.' }; }
     });

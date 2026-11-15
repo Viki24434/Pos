@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from '../../components/Button/Button';
 import Input from '../../components/Input/Input';
+import Select from '../../components/Select/Select';
+import StatusBadge from '../../components/StatusBadge/StatusBadge';
 import Alert from '../../components/Alert/Alert';
 import Table from '../../components/Table/Table';
 import IconButton from '../../components/IconButton/IconButton';
@@ -26,6 +28,24 @@ export default function CreateOrder() {
   
   const [cart, setCart] = useState([]);
   const [customerName, setCustomerName] = useState('');
+  const [customers, setCustomers] = useState([]);
+  const [customerId, setCustomerId] = useState('');
+  const [customerError, setCustomerError] = useState('');
+  const selectedCustomer = customers.find(customer => String(customer.id) === customerId);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const rows = await window.api.getCustomers();
+        if (!Array.isArray(rows)) throw new Error('Invalid customers');
+        if (active) setCustomers(rows);
+      } catch {
+        if (active) setCustomerError('Gagal memuat pelanggan tersimpan. Muat ulang aplikasi untuk memilih pelanggan VIP.');
+      }
+    })();
+    return () => { active = false; };
+  }, []);
   const [discount, setDiscount] = useState(0);
   const [error, setError] = useState('');
   const [variantProduct, setVariantProduct] = useState(null);
@@ -139,7 +159,8 @@ export default function CreateOrder() {
     setError('');
     try {
       const payload = {
-        customerName: customerName.trim() || 'Umum',
+        customerName: selectedCustomer?.name || customerName.trim() || 'Umum',
+        customerId: customerId ? Number(customerId) : 0,
         items: cart,
         discount: discValue,
         grandTotal,
@@ -329,11 +350,21 @@ export default function CreateOrder() {
         <div className="card cart-panel">
           <h3>Keranjang</h3>
 
-          <Input
+          <Alert>{customerError}</Alert>
+          <Select id="order-customer" label="Pelanggan" value={customerId} onChange={event => setCustomerId(event.target.value)}>
+            <option value="">Pelanggan Umum / Nama Manual</option>
+            {customers.map(customer => <option key={customer.id} value={customer.id}>
+              {customer.name} — {customer.status || (customer.is_member ? 'Member' : 'Umum')}{customer.phone ? ` — ${customer.phone}` : ''}
+            </option>)}
+          </Select>
+          {selectedCustomer ? <div style={{ marginBottom: 16 }}>
+            <StatusBadge status={selectedCustomer.status || (selectedCustomer.is_member ? 'Member' : 'Umum')} />
+            {selectedCustomer.phone && <span style={{ marginLeft: 8 }}>{selectedCustomer.phone}</span>}
+          </div> : <Input
             placeholder="Nama Pelanggan (Kosongkan jika Umum)"
             value={customerName}
             onChange={(e) => setCustomerName(e.target.value)}
-          />
+          />}
 
           <div className="cart-table-wrapper">
             <Table columns={cartColumns} data={cart} keyField="key" emptyText="Keranjang kosong" />

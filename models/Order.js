@@ -8,7 +8,7 @@ async function getAllOrders(filters = {}) {
     const db = await getDbConnection();
     if (typeof filters === 'string') filters = { start: filters, end: filters };
     filters ||= {};
-    let sql = `SELECT o.*, c.name as member_name, c.is_member,
+    let sql = `SELECT o.*, c.name as member_name, c.is_member, c.status as customer_status,
                COALESCE((SELECT SUM(amount) FROM payments WHERE order_id = o.id), 0) as total_paid
                FROM orders o
                LEFT JOIN customers c ON o.customer_id = c.id
@@ -54,6 +54,13 @@ async function getOrderPayments(orderId) {
 async function createOrder(customer_name, items, tax_amount, discount, customer_id = 0, payment = null) {
     return withTransaction(async db => {
         if (!Array.isArray(items) || !items.length) throw new Error('Keranjang masih kosong.');
+        customer_id = Number(customer_id);
+        if (!Number.isSafeInteger(customer_id) || customer_id < 0) throw new Error('Pelanggan tidak valid.');
+        if (customer_id > 0) {
+            const customer = await db.get('SELECT name FROM customers WHERE id = ? AND store_id = ?', [customer_id, STORE_ID]);
+            if (!customer) throw new Error('Pelanggan tidak ditemukan. Silakan pilih kembali pelanggan.');
+            customer_name = customer.name;
+        }
         tax_amount = Number(tax_amount);
         discount = Number(discount);
         if (!Number.isFinite(tax_amount) || tax_amount < 0 || !Number.isFinite(discount) || discount < 0) {

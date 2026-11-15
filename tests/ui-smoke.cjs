@@ -223,6 +223,22 @@ app.whenReady().then(async () => {
         assert.equal(customer.is_member, 1);
         console.log('PASS: customer add button, modal, validation, VIP save and table display');
 
+        await evaluate(`location.hash = '#/orders/create'`);
+        await waitFor(`!!document.querySelector('#order-customer option[value="${customer.id}"]') && document.querySelectorAll('.product-tile').length === 1`);
+        await evaluate(`document.querySelector('#order-customer').value = '${customer.id}'; document.querySelector('#order-customer').dispatchEvent(new Event('change', { bubbles: true }))`);
+        await waitFor(`document.querySelector('.cart-panel').innerText.includes('VIP')`);
+        await evaluate(`document.querySelector('.product-tile').click()`);
+        await waitFor(`document.querySelectorAll('.variant-option').length === 2`);
+        await evaluate(`document.querySelectorAll('.variant-option')[0].click()`);
+        await clickButton('Simpan Pesanan (Bayar Nanti)');
+        await waitFor(`document.body.innerText.includes('Riwayat Pesanan') && document.body.innerText.includes('Pelanggan UI') && document.body.innerText.includes('VIP')`);
+        const vipOrder = await db.get('SELECT * FROM orders ORDER BY id DESC LIMIT 1');
+        assert.equal(vipOrder.customer_id, customer.id);
+        assert.equal(vipOrder.customer_name, 'Pelanggan UI');
+        console.log('PASS: selecting a VIP links the customer to the order and displays VIP in history');
+        await evaluate(`location.hash = '#/customers'`);
+        await waitFor(`document.body.innerText.includes('Data Langganan') && !!document.querySelector('button[title="Edit"]')`);
+
         await evaluate(`document.querySelector('button[title="Edit"]').click()`);
         await waitFor(`!!document.querySelector('#modal-customer')`);
         assert.equal(await evaluate(`document.querySelector('#customer-status').value`), 'VIP');

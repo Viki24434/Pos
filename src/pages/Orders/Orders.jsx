@@ -80,7 +80,7 @@ export default function Orders() {
     { key: 'payment_action', label: 'Pembayaran', render: order => Math.round((order.total_amount - (order.total_paid || 0)) * 100) > 0
       ? <Button variant="success" icon="fas fa-wallet" title="Bayar" disabled={paying} onClick={() => openPayment(order)}>Bayar</Button>
       : <StatusBadge status="Lunas" /> },
-    { key: 'customer_name', label: 'Pelanggan', render: (o) => <b>{o.customer_name}</b> },
+    { key: 'customer_name', label: 'Pelanggan', render: (o) => <div><b>{o.customer_name}</b>{o.customer_status && <div style={{ marginTop: 4 }}><StatusBadge status={o.customer_status} /></div>}</div> },
     { key: 'total_amount', label: 'Total Tagihan', render: (o) => formatRp(o.total_amount) },
     { key: 'total_paid', label: 'Terbayar', render: o => formatRp(o.total_paid || 0) },
     { key: 'remaining', label: 'Sisa Tagihan', render: o => formatRp(Math.max(0, o.total_amount - (o.total_paid || 0))) },
