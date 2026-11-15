@@ -140,6 +140,26 @@
   font-size: 15px;
 }
 
+.product-variant-count { display: block; color: var(--muted); margin-top: 5px; }
+.variant-options { display: flex; flex-direction: column; gap: 10px; }
+.variant-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: #f8fafc;
+  color: var(--dark);
+  text-align: left;
+  cursor: pointer;
+}
+.variant-option:hover:not(:disabled) { border-color: var(--primary); background: #eef2ff; }
+.variant-option:disabled { opacity: 0.5; cursor: not-allowed; }
+.variant-option small { display: block; color: var(--muted); margin-top: 5px; }
+.variant-option > div:last-child { text-align: right; }
+
 @media (max-width: 900px) {
   .create-order-layout {
     flex-direction: column;

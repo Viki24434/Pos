@@ -5,6 +5,7 @@ import Input from '../../components/Input/Input';
 import Alert from '../../components/Alert/Alert';
 import Table from '../../components/Table/Table';
 import IconButton from '../../components/IconButton/IconButton';
+import Modal from '../../components/Modal/Modal';
 import { formatRp } from '../../utils/format';
 import './Create.css';
 
@@ -24,6 +25,8 @@ export default function CreateOrder() {
   const [customerName, setCustomerName] = useState('');
   const [discount, setDiscount] = useState(0);
   const [error, setError] = useState('');
+  const [variantProduct, setVariantProduct] = useState(null);
+  const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -51,36 +54,46 @@ export default function CreateOrder() {
       : 'https://placehold.co/100x100/e2e8f0/64748b?text=No+Image';
   };
 
-  const addToCart = (product) => {
-    if (product.stock <= 0) return;
+  const addToCart = (product, variant = null) => {
+    if (product.variants?.length && !variant) {
+      setVariantProduct(product);
+      return;
+    }
+    const stock = variant ? variant.stock : product.stock;
+    const price = Number(variant ? variant.price : product.price);
+    if (stock <= 0) return;
+    const key = `${product.id}:${variant?.id || 'base'}`;
 
     setCart((prevCart) => {
-      const existing = prevCart.find((item) => item.id === product.id);
+      const existing = prevCart.find((item) => item.key === key);
       if (existing) {
-        if (existing.qty >= product.stock) {
-          alert(`Stok tidak mencukupi! Sisa stok hanya ${product.stock}.`);
+        if (existing.qty >= stock) {
+          alert(`Stok tidak mencukupi! Sisa stok hanya ${stock}.`);
           return prevCart;
         }
         return prevCart.map((item) =>
-          item.id === product.id
+          item.key === key
             ? { ...item, qty: item.qty + 1, subtotal: (item.qty + 1) * item.price }
             : item
         );
       }
-      return [...prevCart, { id: product.id, name: product.name, price: product.price, qty: 1, subtotal: product.price }];
+      return [...prevCart, { key, product_id: product.id, variant_id: variant?.id ?? null,
+        name: variant ? `${product.name} - ${variant.name}` : product.name, price, qty: 1, subtotal: price }];
     });
+    setVariantProduct(null);
   };
 
-  const updateQty = (id, delta) => {
+  const updateQty = (key, delta) => {
     setCart((prevCart) =>
       prevCart
         .map((item) => {
-          if (item.id === id) {
-            const productRef = products.find(p => p.id === id);
+          if (item.key === key) {
+            const productRef = products.find(p => p.id === item.product_id);
+            const stock = item.variant_id ? productRef?.variants?.find(v => v.id === item.variant_id)?.stock : productRef?.stock;
             const newQty = item.qty + delta;
             
-            if (newQty > productRef?.stock) {
-              alert(`Stok tidak mencukupi! Sisa stok hanya ${productRef.stock}.`);
+            if (newQty > (stock ?? 0)) {
+              alert(`Stok tidak mencukupi! Sisa stok hanya ${stock ?? 0}.`);
               return item;
             }
             
@@ -92,8 +105,8 @@ export default function CreateOrder() {
     );
   };
 
-  const removeFromCart = (id) => {
-    setCart((prevCart) => prevCart.filter((item) => item.id !== id));
+  const removeFromCart = (key) => {
+    setCart((prevCart) => prevCart.filter((item) => item.key !== key));
   };
 
   const subtotal = cart.reduce((acc, item) => acc + item.subtotal, 0);
@@ -101,11 +114,18 @@ export default function CreateOrder() {
   const grandTotal = Math.max(0, subtotal - discValue);
 
   const handleProcessOrder = async () => {
+    if (processing) return;
     if (cart.length === 0) {
       alert('Keranjang masih kosong!');
       return;
     }
+    if (!Number.isFinite(Number(discount)) || Number(discount) < 0 || Number(discount) > subtotal) {
+      setError('Diskon harus antara 0 dan subtotal.');
+      return;
+    }
 
+    setProcessing(true);
+    setError('');
     try {
       const payload = {
         customerName: customerName.trim() || 'Umum',
@@ -117,20 +137,23 @@ export default function CreateOrder() {
       };
 
       const orderId = await window.api.createOrder(payload);
-      if (orderId) {
+      if (typeof orderId === 'number' && orderId > 0) {
         alert('Pesanan berhasil diproses!');
         navigate('/orders');
       } else {
-        alert('Gagal memproses pesanan.');
+        setError(orderId?.message || 'Gagal memproses pesanan.');
       }
     } catch (e) {
-      alert('Terjadi kesalahan sistem.');
+      setError('Terjadi kesalahan sistem.');
+    } finally {
+      setProcessing(false);
     }
   };
 
   // Logika Filter
   const filteredProducts = products.filter((p) => {
-    const matchSearch = p.name?.toLowerCase().includes(search.toLowerCase()) || p.code?.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = p.name?.toLowerCase().includes(search.toLowerCase()) || p.code?.toLowerCase().includes(search.toLowerCase()) ||
+      p.variants?.some(variant => `${variant.name} ${variant.sku || ''}`.toLowerCase().includes(search.toLowerCase()));
     
     // PERBAIKAN: Ubah p.category_id menjadi string agar cocok dengan selectedCategory
     const matchCategory = selectedCategory ? String(p.category_id) === selectedCategory : true;
@@ -152,9 +175,9 @@ export default function CreateOrder() {
       cellStyle: { textAlign: 'center' },
       render: (item) => (
         <div className="qty-stepper">
-          <button type="button" onClick={() => updateQty(item.id, -1)}>-</button>
+          <button type="button" onClick={() => updateQty(item.key, -1)}>-</button>
           <span>{item.qty}</span>
-          <button type="button" onClick={() => updateQty(item.id, 1)}>+</button>
+          <button type="button" onClick={() => updateQty(item.key, 1)}>+</button>
         </div>
       ),
     },
@@ -170,7 +193,7 @@ export default function CreateOrder() {
       label: '',
       headerStyle: { width: 30 },
       cellStyle: { textAlign: 'center' },
-      render: (item) => <IconButton icon="fas fa-trash" variant="danger" onClick={() => removeFromCart(item.id)} title="Hapus" />,
+      render: (item) => <IconButton icon="fas fa-trash" variant="danger" onClick={() => removeFromCart(item.key)} title="Hapus" />,
     },
   ];
 
@@ -254,7 +277,8 @@ export default function CreateOrder() {
                     />
                     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', overflow: 'hidden' }}>
                       <b style={{ fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</b>
-                      <span style={{ color: 'var(--primary)', fontWeight: 'bold', fontSize: '13px' }}>{formatRp(p.price)}</span>
+                      <span style={{ color: 'var(--primary)', fontWeight: 'bold', fontSize: '13px' }}>{p.variants?.length ? 'Mulai ' : ''}{formatRp(p.price)}</span>
+                      {!!p.variants?.length && <small className="product-variant-count">Pilih {p.variants.length} varian</small>}
                     </div>
                   </div>
                 );
@@ -297,7 +321,7 @@ export default function CreateOrder() {
           />
 
           <div className="cart-table-wrapper">
-            <Table columns={cartColumns} data={cart} emptyText="Keranjang kosong" />
+            <Table columns={cartColumns} data={cart} keyField="key" emptyText="Keranjang kosong" />
           </div>
 
           <div className="cart-summary">
@@ -319,11 +343,21 @@ export default function CreateOrder() {
             </div>
           </div>
 
-          <Button variant="success" fullWidth icon="fas fa-check-circle" onClick={handleProcessOrder} className="process-order-btn">
-            Proses Pembayaran
+          <Button variant="success" fullWidth icon="fas fa-check-circle" disabled={processing} onClick={handleProcessOrder} className="process-order-btn">
+            {processing ? 'Memproses...' : 'Proses Pembayaran'}
           </Button>
         </div>
       </div>
+      <Modal isOpen={!!variantProduct} onClose={() => setVariantProduct(null)} title={`Pilih Varian: ${variantProduct?.name || ''}`} maxWidth={550}>
+        <div className="variant-options">
+          {variantProduct?.variants.map(variant => (
+            <button type="button" className="variant-option" key={variant.id} disabled={variant.stock <= 0} onClick={() => addToCart(variantProduct, variant)}>
+              <div><strong>{variant.name}</strong>{variant.sku && <small>SKU: {variant.sku}</small>}</div>
+              <div><strong>{formatRp(variant.price)}</strong><small>{variant.stock > 0 ? `Stok: ${variant.stock}` : 'Stok habis'}</small></div>
+            </button>
+          ))}
+        </div>
+      </Modal>
     </div>
   );
 }

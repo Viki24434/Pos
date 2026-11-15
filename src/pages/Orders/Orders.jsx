@@ -103,7 +103,7 @@ export default function Orders() {
   ];
 
   const itemColumns = [
-    { key: 'product_name', label: 'Item' },
+    { key: 'item_name', label: 'Item', render: (item) => item.item_name || item.product_name },
     { key: 'qty', label: 'Qty', headerStyle: { textAlign: 'center' }, cellStyle: { textAlign: 'center' } },
     { key: 'price', label: 'Harga', headerStyle: { textAlign: 'right' }, cellStyle: { textAlign: 'right' }, render: (i) => formatRp(i.price) },
     { key: 'subtotal', label: 'Subtotal', headerStyle: { textAlign: 'right' }, cellStyle: { textAlign: 'right' }, render: (i) => formatRp(i.subtotal) },
@@ -158,7 +158,7 @@ export default function Orders() {
         title={`Detail Pesanan: ${detail.invoice}`}
         maxWidth={700}
       >
-        <Table columns={itemColumns} data={detail.items} keyField="product_name" emptyText="Tidak ada item." />
+        <Table columns={itemColumns} data={detail.items} emptyText="Tidak ada item." />
       </Modal>
 
       <Modal

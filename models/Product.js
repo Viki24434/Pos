@@ -1,95 +1,120 @@
-import { getDbConnection } from '../config/db.js';
+﻿import { getDbConnection, withTransaction } from '../config/db.js';
 const STORE_ID = 1;
 
-function getRandomInt(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
+function nonNegative(value, label, integer = false) {
+    const number = Number(value);
+    if (value === '' || value == null || !Number.isFinite(number) || number < 0 || (integer && !Number.isSafeInteger(number))) {
+        throw new Error(`${label} harus berupa angka ${integer ? 'bulat ' : ''}minimal 0.`);
+    }
+    return number;
 }
 
-async function generateUniqueCode(store_id) {
-    const db = await getDbConnection();
-    while (true) {
-        const code = getRandomInt(100000, 999999).toString();
-        const rows = await db.all("SELECT id FROM products WHERE store_id = ? AND product_code = ?", [store_id, code]);
-        if (rows.length === 0) return code;
-    }
+async function attachVariants(db, products) {
+    const variants = await db.all(`SELECT v.* FROM product_variants v
+        JOIN products p ON p.id = v.product_id WHERE p.store_id = ? AND v.active = 1 ORDER BY v.id`, [STORE_ID]);
+    return products.map(product => ({ ...product, code: product.product_code,
+        variants: variants.filter(variant => variant.product_id === product.id) }));
 }
 
 async function getAll() {
     const db = await getDbConnection();
-    const sql = `SELECT p.*, c.name as category_name, u.name as unit_name 
-                 FROM products p 
-                 LEFT JOIN categories c ON p.category_id = c.id 
-                 LEFT JOIN units u ON p.unit_id = u.id 
-                 WHERE p.store_id = ? ORDER BY p.id DESC`;
-    const rows = await db.all(sql, [STORE_ID]);
-    return rows;
+    const products = await db.all(`SELECT p.*, c.name as category_name, u.name as unit_name
+        FROM products p LEFT JOIN categories c ON p.category_id = c.id
+        LEFT JOIN units u ON p.unit_id = u.id WHERE p.store_id = ? ORDER BY p.id DESC`, [STORE_ID]);
+    return attachVariants(db, products);
 }
 
 async function getById(id) {
     const db = await getDbConnection();
-    const row = await db.get("SELECT * FROM products WHERE id = ?", [id]);
-    return row;
+    const product = await db.get('SELECT * FROM products WHERE id = ? AND store_id = ?', [id, STORE_ID]);
+    return product ? (await attachVariants(db, [product]))[0] : undefined;
 }
 
 async function getByCategory(category_id) {
-    const db = await getDbConnection();
-    const rows = await db.all("SELECT id, name, price, stock FROM products WHERE category_id = ? AND store_id = ? AND stock > 0", [category_id, STORE_ID]);
-    return rows;
+    return (await getAll()).filter(product => product.category_id === Number(category_id) && product.stock > 0);
 }
 
-async function create(data) {
-    const db = await getDbConnection();
-    let product_code = data.product_code || await generateUniqueCode(STORE_ID);
-    
-    const sql = "INSERT INTO products (store_id, category_id, unit_id, product_code, name, price, stock, img) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-    const result = await db.run(sql, [
-        STORE_ID, 
-        data.category_id, 
-        data.unit_id, 
-        product_code, 
-        data.name, 
-        data.price, 
-        data.stock, 
-        data.img
-    ]);
-    return result;
+async function saveProduct(id, data) {
+    return withTransaction(async db => {
+        const existing = id ? await db.get('SELECT * FROM products WHERE id = ? AND store_id = ?', [id, STORE_ID]) : null;
+        if (id && !existing) throw new Error('Produk tidak ditemukan.');
+        const name = String(data.name || '').trim();
+        if (!name) throw new Error('Nama produk wajib diisi.');
+        let code = String(data.code ?? data.product_code ?? existing?.product_code ?? '').trim();
+        if (!code) {
+            do {
+                code = String(Math.floor(100000 + Math.random() * 900000));
+            } while (await db.get('SELECT id FROM products WHERE product_code = ? AND store_id = ?', [code, STORE_ID]));
+        }
+        if (await db.get('SELECT id FROM products WHERE product_code = ? AND store_id = ? AND id != ?', [code, STORE_ID, id || 0])) {
+            throw new Error('Kode produk sudah digunakan.');
+        }
+        const previousVariants = id ? await db.all('SELECT * FROM product_variants WHERE product_id = ?', [id]) : [];
+        const inputVariants = data.variants === undefined ? previousVariants.filter(v => v.active) : data.variants;
+        if (!Array.isArray(inputVariants)) throw new Error('Daftar varian tidak valid.');
+        const names = new Set();
+        const skus = new Set();
+        const ids = new Set();
+        const variants = inputVariants.map(variant => {
+            const variantName = String(variant.name || '').trim();
+            const sku = String(variant.sku || '').trim();
+            if (!variantName) throw new Error('Nama setiap varian wajib diisi.');
+            if (names.has(variantName.toLowerCase())) throw new Error('Nama varian tidak boleh sama dalam satu produk.');
+            if (sku && skus.has(sku.toLowerCase())) throw new Error('SKU varian tidak boleh sama dalam satu produk.');
+            names.add(variantName.toLowerCase());
+            if (sku) skus.add(sku.toLowerCase());
+            const variantId = variant.id ? Number(variant.id) : null;
+            if (variant.id && (!Number.isSafeInteger(variantId) || ids.has(variantId) || !previousVariants.some(v => v.id === variantId && v.active))) {
+                throw new Error('ID varian tidak valid.');
+            }
+            if (variantId) ids.add(variantId);
+            return { id: variantId, name: variantName, sku, price: nonNegative(variant.price, 'Harga varian'), stock: nonNegative(variant.stock, 'Stok varian', true) };
+        });
+        const price = variants.length ? Math.min(...variants.map(v => v.price)) : nonNegative(data.price, 'Harga produk');
+        const stock = variants.length ? variants.reduce((sum, v) => sum + v.stock, 0) : nonNegative(data.stock ?? 0, 'Stok produk', true);
+        const params = [data.category_id || null, data.unit_id || null, code, name,
+            data.purchase_price ?? existing?.purchase_price ?? 0, price, stock, data.img || existing?.img || 'default.png'];
+        let result;
+        if (id) {
+            result = await db.run(`UPDATE products SET category_id=?, unit_id=?, product_code=?, name=?,
+                purchase_price=?, price=?, stock=?, img=? WHERE id=? AND store_id=?`, [...params, id, STORE_ID]);
+        } else {
+            result = await db.run(`INSERT INTO products (category_id, unit_id, product_code, name, purchase_price, price, stock, img, store_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [...params, STORE_ID]);
+            id = result.lastID;
+        }
+        // Keep removed variants for historical order references.
+        await db.run('UPDATE product_variants SET active = 0 WHERE product_id = ?', [id]);
+        for (const variant of variants) {
+            if (variant.id) {
+                await db.run('UPDATE product_variants SET name=?, sku=?, price=?, stock=?, active=1 WHERE id=? AND product_id=?',
+                    [variant.name, variant.sku, variant.price, variant.stock, variant.id, id]);
+            } else {
+                await db.run('INSERT INTO product_variants (product_id, name, sku, price, stock) VALUES (?, ?, ?, ?, ?)',
+                    [id, variant.name, variant.sku, variant.price, variant.stock]);
+            }
+        }
+        return result;
+    });
 }
 
-async function update(id, data) {
-    const db = await getDbConnection();
-    let product_code = data.product_code ? data.product_code.trim() : '';
-    if (!product_code) {
-        product_code = await generateUniqueCode(STORE_ID);
-    } else {
-        const check = await db.all("SELECT id FROM products WHERE store_id = ? AND product_code = ? AND id != ?", [STORE_ID, product_code, id]);
-        if (check.length > 0) product_code = await generateUniqueCode(STORE_ID);
-    }
-
-    const sql = "UPDATE products SET category_id = ?, unit_id = ?, product_code = ?, name = ?, purchase_price = ?, price = ?, stock = ?, img = ? WHERE id = ?";
-    const result = await db.run(sql, [
-        data.category_id,
-        data.unit_id,
-        product_code,
-        data.name,
-        data.purchase_price || 0,
-        data.price,
-        data.stock,
-        data.img || null,
-        id
-    ]);
-    return result;
-}
+const create = data => saveProduct(null, data);
+const update = (id, data) => saveProduct(id, data);
 
 async function deleteProduct(id) {
-    const db = await getDbConnection();
-    const result = await db.run("DELETE FROM products WHERE id = ?", [id]);
-    return result;
+    return withTransaction(db => db.run('DELETE FROM products WHERE id = ? AND store_id = ?', [id, STORE_ID]));
 }
 
 async function updateStock(id, qty) {
-    const db = await getDbConnection();
-    const result = await db.run("UPDATE products SET stock = stock + ? WHERE id = ?", [qty, id]);
-    return result;
+    return withTransaction(async db => {
+        if (await db.get('SELECT id FROM product_variants WHERE product_id = ? AND active = 1', [id])) {
+            throw new Error('Ubah stok melalui varian produk.');
+        }
+        const product = await db.get('SELECT stock FROM products WHERE id = ? AND store_id = ?', [id, STORE_ID]);
+        if (!product) throw new Error('Produk tidak ditemukan.');
+        const stock = nonNegative(product.stock + Number(qty), 'Stok produk', true);
+        return db.run('UPDATE products SET stock = ? WHERE id = ?', [stock, id]);
+    });
 }
 
 export { getAll, getById, getByCategory, create, update, deleteProduct, updateStock };

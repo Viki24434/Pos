@@ -246,14 +246,7 @@ ipcMain.handle('get-orders', async (event, filters) => {
 
 ipcMain.handle('get-order-detail', async (event, id) => {
     try {
-        const db = await getDbConnection();
-        const rows = await db.all(`
-            SELECT oi.*, p.name as product_name 
-            FROM order_items oi 
-            JOIN products p ON oi.product_id = p.id 
-            WHERE oi.order_id = ?
-        `, [id]);
-        return rows;
+        return await Order.getOrderItems(id);
     } catch (e) {
         return [];
     }
@@ -263,7 +256,7 @@ ipcMain.handle('get-print-data', async (event, id) => {
     try {
         const db = await getDbConnection();
         const order = await db.get("SELECT * FROM orders WHERE id = ?", [id]);
-        const items = await db.all("SELECT oi.*, p.name as product_name FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = ?", [id]);
+        const items = (await Order.getOrderItems(id)).map(item => ({ ...item, product_name: item.item_name }));
         const store = await db.get("SELECT * FROM stores LIMIT 1");
         
         return { order: order, items: items, store: store };
@@ -300,23 +293,18 @@ let loadingWindow;
 ipcMain.handle('create-order', async (event, data) => {
     try {
         const orderItems = data.items.map(item => ({
-            product_id: item.id,
+            product_id: item.product_id ?? item.id,
+            variant_id: item.variant_id ?? null,
             qty: item.qty,
             price: item.price,
             subtotal: item.subtotal
         }));
         
-        const orderId = await Order.createOrder(data.customerName, orderItems, 0, data.discount, 0);
-        
-        if (orderId && data.amountPaid > 0) {
-            await Order.addPayment(orderId, 1, data.paymentMethod, data.amountPaid);
-            if (data.amountPaid >= data.grandTotal) {
-                await Order.updateStatus(orderId, 'Selesai');
-            }
-        }
+        const orderId = await Order.createOrder(data.customerName, orderItems, 0, data.discount, 0,
+            { amount: data.amountPaid ?? 0, method: data.paymentMethod || 'Cash', user_id: 1 });
         return orderId;
     } catch (e) {
-        return null;
+        return { success: false, message: e.message || 'Gagal memproses pesanan.' };
     }
 });
 
@@ -359,7 +347,7 @@ function createWindow () {
         }
     });
 
-    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.loadURL('http://localhost:2026');
 
     mainWindow.webContents.on('before-input-event', (event, input) => {
         if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
@@ -478,13 +466,13 @@ ipcMain.handle('upload-product-image', async (event, payload) => {
 });
 
 ipcMain.handle('create-product', async (event, data) => {
-    try { await Product.create(data); return true; } catch (e) { return false; }
+    try { await Product.create(data); return true; } catch (e) { return { success: false, message: e.message }; }
 });
 ipcMain.handle('get-product', async (event, id) => {
     try { return await Product.getById(id); } catch (e) { return null; }
 });
 ipcMain.handle('update-product', async (event, id, data) => {
-    try { await Product.update(id, data); return true; } catch (e) { return false; }
+    try { await Product.update(id, data); return true; } catch (e) { return { success: false, message: e.message }; }
 });
 
 ipcMain.handle('get-ip-address', () => {

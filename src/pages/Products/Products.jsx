@@ -10,7 +10,7 @@ import PageHeader from '../../components/PageHeader/PageHeader';
 import { formatRp } from '../../utils/format';
 import './Products.css';
 
-const EMPTY_PRODUCT = { id: '', code: '', name: '', category_id: '', unit_id: '', price: '', stock: '0' };
+const EMPTY_PRODUCT = { id: '', code: '', name: '', category_id: '', unit_id: '', price: '', stock: '0', variants: [] };
 const EMPTY_CATEGORY = { id: '', name: '' };
 const EMPTY_UNIT = { id: '', name: '', symbol: '' };
 
@@ -20,6 +20,8 @@ export default function Products() {
   const [units, setUnits] = useState([]);
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [productError, setProductError] = useState('');
 
   const [productModal, setProductModal] = useState({ open: false, form: EMPTY_PRODUCT, file: null, imagePreview: null });
   const [categoryModal, setCategoryModal] = useState({ open: false, form: EMPTY_CATEGORY });
@@ -54,6 +56,7 @@ export default function Products() {
 
   // ===== Produk =====
   const openProductModal = (product = null) => {
+    setProductError('');
     setProductModal({
       open: true,
       file: null,
@@ -65,12 +68,29 @@ export default function Products() {
             name: product.name || '',
             category_id: product.category_id || '',
             unit_id: product.unit_id || '',
-            price: product.price || '',
+            price: product.price ?? '',
             stock: product.stock || '0',
+            variants: (product.variants || []).map(variant => ({ ...variant, key: `saved-${variant.id}` })),
           }
         : EMPTY_PRODUCT,
     });
   };
+
+  const updateVariant = (key, field, value) => setProductModal(previous => ({
+    ...previous,
+    form: { ...previous.form, variants: previous.form.variants.map(variant => variant.key === key ? { ...variant, [field]: value } : variant) },
+  }));
+
+  const addVariant = () => setProductModal(previous => ({
+    ...previous,
+    form: { ...previous.form, variants: [...previous.form.variants, {
+      key: crypto.randomUUID(), name: '', sku: '', price: previous.form.price || '0', stock: '0',
+    }] },
+  }));
+
+  const removeVariant = (key) => setProductModal(previous => ({
+    ...previous, form: { ...previous.form, variants: previous.form.variants.filter(variant => variant.key !== key) },
+  }));
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -84,14 +104,18 @@ export default function Products() {
 
   const saveProduct = async (e) => {
     e.preventDefault();
+    if (saving) return;
     const { form, file } = productModal;
+    setSaving(true);
+    setProductError('');
     try {
       let imageName = form.id ? products.find(p => p.id === form.id)?.img || 'default.png' : 'default.png';
       
       if (file) {
         const buffer = await file.arrayBuffer();
         const uploadRes = await window.api.uploadProductImage({ buffer });
-        if (uploadRes.success) imageName = uploadRes.fileName;
+        if (!uploadRes.success) throw new Error(uploadRes.message || 'Gagal mengunggah gambar.');
+        imageName = uploadRes.fileName;
       }
 
       const payload = {
@@ -102,18 +126,20 @@ export default function Products() {
         price: parseFloat(form.price),
         stock: parseInt(form.stock),
         img: imageName,
+        variants: form.variants.map(variant => ({
+          id: variant.id, name: variant.name, sku: variant.sku, price: Number(variant.price), stock: Number(variant.stock),
+        })),
       };
 
-      if (form.id) {
-        await window.api.updateProduct(form.id, payload);
-      } else {
-        await window.api.createProduct(payload);
-      }
+      const result = form.id ? await window.api.updateProduct(form.id, payload) : await window.api.createProduct(payload);
+      if (result !== true) throw new Error(result?.message || 'Gagal menyimpan produk.');
 
       setProductModal({ open: false, form: EMPTY_PRODUCT, file: null, imagePreview: null });
       loadData();
     } catch (err) {
-      setError('Gagal menyimpan produk.');
+      setProductError(err.message || 'Gagal menyimpan produk.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -153,7 +179,8 @@ export default function Products() {
   const filteredProducts = products.filter(
     (p) =>
       p.name?.toLowerCase().includes(search.toLowerCase()) ||
-      p.code?.toLowerCase().includes(search.toLowerCase())
+      p.code?.toLowerCase().includes(search.toLowerCase()) ||
+      p.variants?.some(variant => `${variant.name} ${variant.sku || ''}`.toLowerCase().includes(search.toLowerCase()))
   );
 
   const productColumns = [
@@ -173,9 +200,10 @@ export default function Products() {
     },
     { key: 'code', label: 'Kode' },
     { key: 'name', label: 'Nama Produk', render: (p) => <b>{p.name}</b> },
+    { key: 'variants', label: 'Varian', render: (p) => p.variants?.length ? <span title={p.variants.map(v => v.name).join(', ')}>{p.variants.length} varian</span> : '-' },
     { key: 'category_name', label: 'Kategori', render: (p) => p.category_name || '-' },
     { key: 'stock', label: 'Stok', cellStyle: { textAlign: 'center' }, render: (p) => <span className="badge-pill" style={{ background: '#f1f5f9' }}>{p.stock}</span> },
-    { key: 'price', label: 'Harga Jual', render: (p) => formatRp(p.price) },
+    { key: 'price', label: 'Harga Jual', render: (p) => `${p.variants?.length ? 'Mulai ' : ''}${formatRp(p.price)}` },
   ];
 
   const categoryColumns = [
@@ -283,8 +311,10 @@ export default function Products() {
         onClose={() => setProductModal({ ...productModal, open: false })}
         icon="fas fa-box"
         title={productModal.form.id ? 'Edit Produk' : 'Tambah Produk Baru'}
+        maxWidth={850}
       >
         <form onSubmit={saveProduct}>
+          <Alert>{productError}</Alert>
           <div style={{ display: 'flex', gap: '15px', marginBottom: '12px' }}>
             <div style={{ flex: 1 }}>
               <Input
@@ -330,24 +360,44 @@ export default function Products() {
           <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
             <div style={{ flex: 1 }}>
               <Input
-                label="Harga Jual (Rp) *"
+                label={productModal.form.variants.length ? 'Harga Terendah (Rp)' : 'Harga Jual (Rp) *'}
                 type="number"
                 min="0"
-                required
-                value={productModal.form.price}
+                step="0.01"
+                required={!productModal.form.variants.length}
+                readOnly={!!productModal.form.variants.length}
+                value={productModal.form.variants.length ? Math.min(...productModal.form.variants.map(v => Number(v.price) || 0)) : productModal.form.price}
                 onChange={(e) => setProductModal({ ...productModal, form: { ...productModal.form, price: e.target.value } })}
               />
             </div>
             <div style={{ flex: 1 }}>
               <Input
-                label="Stok Awal"
+                label={productModal.form.variants.length ? 'Total Stok Varian' : 'Stok'}
                 type="number"
                 min="0"
-                value={productModal.form.stock}
+                readOnly={!!productModal.form.variants.length}
+                value={productModal.form.variants.length ? productModal.form.variants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0) : productModal.form.stock}
                 onChange={(e) => setProductModal({ ...productModal, form: { ...productModal.form, stock: e.target.value } })}
               />
             </div>
           </div>
+
+          <section className="variant-editor">
+            <div className="variant-editor-heading">
+              <div><strong>Varian Produk</strong><p>Contoh: Merah / XL atau A4 / Glossy. Setiap varian memiliki harga dan stok sendiri.</p></div>
+              <Button variant="secondary" icon="fas fa-plus" onClick={addVariant}>Tambah Varian</Button>
+            </div>
+            {!productModal.form.variants.length && <p className="variant-help">Tanpa varian, produk memakai harga dan stok di atas. Saat menambahkan varian, isi stok setiap varian sesuai persediaan.</p>}
+            {productModal.form.variants.map((variant, index) => (
+              <div className="variant-editor-row" key={variant.key}>
+                <Input label={`Nama Varian ${index + 1} *`} placeholder="Merah / XL" required value={variant.name} onChange={e => updateVariant(variant.key, 'name', e.target.value)} />
+                <Input label="SKU (Opsional)" value={variant.sku} onChange={e => updateVariant(variant.key, 'sku', e.target.value)} />
+                <Input label="Harga (Rp) *" type="number" min="0" step="0.01" required value={variant.price} onChange={e => updateVariant(variant.key, 'price', e.target.value)} />
+                <Input label="Stok *" type="number" min="0" step="1" required value={variant.stock} onChange={e => updateVariant(variant.key, 'stock', e.target.value)} />
+                <Button variant="danger" aria-label={`Hapus varian ${index + 1}`} onClick={() => removeVariant(variant.key)}><i className="fas fa-trash"></i></Button>
+              </div>
+            ))}
+          </section>
 
           <div style={{ marginBottom: '20px', padding: '15px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '20px' }}>
             <div style={{ width: '80px', height: '80px', borderRadius: '8px', overflow: 'hidden', background: '#e2e8f0', display: 'flex', justifyContent: 'center', alignItems: 'center', border: '2px solid white', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
@@ -370,8 +420,8 @@ export default function Products() {
           </div>
 
           <div style={{ display: 'flex', gap: '10px' }}>
-            <Button type="submit" variant="success" fullWidth style={{ justifyContent: 'center', height: '42px' }}>
-              Simpan Produk
+            <Button type="submit" variant="success" fullWidth disabled={saving} style={{ justifyContent: 'center', height: '42px' }}>
+              {saving ? 'Menyimpan...' : 'Simpan Produk'}
             </Button>
             <Button type="button" variant="secondary" onClick={() => setProductModal({ ...productModal, open: false })}>
               Batal

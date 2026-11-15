@@ -3,20 +3,66 @@ import { open } from 'sqlite';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import process from 'node:process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let dbInstance = null;
+let transactionQueue = Promise.resolve();
+
+async function withTransaction(work) {
+    const pending = transactionQueue.then(async () => {
+        const db = await getDbConnection();
+        await db.exec('BEGIN IMMEDIATE');
+        try {
+            const result = await work(db);
+            await db.exec('COMMIT');
+            return result;
+        } catch (error) {
+            await db.exec('ROLLBACK');
+            throw error;
+        }
+    });
+    transactionQueue = pending.catch(() => {});
+    return pending;
+}
+
+async function migrateProductVariants(db) {
+    await db.exec(`CREATE TABLE IF NOT EXISTS product_variants (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        sku TEXT,
+        price REAL NOT NULL CHECK(price >= 0),
+        stock INTEGER NOT NULL DEFAULT 0 CHECK(stock >= 0),
+        active INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_product_variants_product ON product_variants(product_id);`);
+    const columns = await db.all('PRAGMA table_info(order_items)');
+    for (const [name, definition] of [
+        ['variant_id', 'INTEGER REFERENCES product_variants(id)'],
+        ['variant_name', 'TEXT'],
+        ['variant_sku', 'TEXT'],
+    ]) {
+        if (!columns.some(column => column.name === name)) {
+            await db.exec(`ALTER TABLE order_items ADD COLUMN ${name} ${definition}`);
+        }
+    }
+}
 
 async function getDbConnection() {
     if (!dbInstance) {
-        dbInstance = await open({
-            filename: path.join(__dirname, '..', 'db_percetakan.sqlite'),
+        dbInstance = open({
+            filename: process.env.APP_JS_DB_PATH || path.join(__dirname, '..', 'db_percetakan.sqlite'),
             driver: sqlite3.verbose().Database
+        }).then(async db => {
+            await db.run('PRAGMA foreign_keys = ON');
+            return db;
+        }).catch(error => {
+            dbInstance = null;
+            throw error;
         });
-        
-        await dbInstance.run('PRAGMA foreign_keys = ON');
     }
     return dbInstance;
 }
@@ -78,6 +124,7 @@ async function inisialisasiDatabase() {
             console.error('Gagal membuat atau mengecek user admin:', e.message);
         }
 
+        await migrateProductVariants(db);
         console.log('Database SQLite siap digunakan.');
     } catch (error) {
         console.error('Gagal inisialisasi database SQLite:', error.message);
@@ -86,5 +133,7 @@ async function inisialisasiDatabase() {
 
 export {
     getDbConnection,
-    inisialisasiDatabase
+    inisialisasiDatabase,
+    migrateProductVariants,
+    withTransaction
 };

@@ -88,6 +88,17 @@ CREATE TABLE IF NOT EXISTS products (
 CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id);
 CREATE INDEX IF NOT EXISTS idx_products_unit_id ON products(unit_id);
 
+CREATE TABLE IF NOT EXISTS product_variants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  sku TEXT,
+  price REAL NOT NULL CHECK(price >= 0),
+  stock INTEGER NOT NULL DEFAULT 0 CHECK(stock >= 0),
+  active INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_product_variants_product ON product_variants(product_id);
+
 CREATE TABLE IF NOT EXISTS orders (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   store_id INTEGER NOT NULL DEFAULT 1,
@@ -123,6 +134,9 @@ CREATE TABLE IF NOT EXISTS order_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   order_id INTEGER NOT NULL,
   product_id INTEGER NOT NULL,
+  variant_id INTEGER REFERENCES product_variants(id),
+  variant_name TEXT,
+  variant_sku TEXT,
   qty INTEGER NOT NULL,
   price DECIMAL(15,2) NOT NULL,
   subtotal DECIMAL(15,2) NOT NULL,
