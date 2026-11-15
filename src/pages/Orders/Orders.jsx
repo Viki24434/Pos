@@ -21,6 +21,30 @@ export default function Orders() {
   const [orders, setOrders] = useState([]);
   const [filter, setFilter] = useState({ start: '', end: '', search: '' });
   const [error, setError] = useState('');
+  const [receipt, setReceipt] = useState(null);
+  const [printing, setPrinting] = useState(false);
+  const [printError, setPrintError] = useState('');
+
+  const openReceipt = async (order) => {
+    setPrintError('');
+    try {
+      if (!window.api?.previewReceipt) throw new Error('Tutup dan buka ulang aplikasi untuk memuat fitur cetak.');
+      const settings = await window.api.getPrintSettings();
+      const paper = settings?.receipt_paper || '80mm';
+      const html = await window.api.previewReceipt(order.id);
+      setReceipt({ id: order.id, invoice: order.invoice_number || order.invoice, paper, html });
+    } catch (printFailure) { setError(printFailure.message || 'Gagal memuat struk.'); }
+  };
+  const printReceipt = async () => {
+    if (printing) return;
+    setPrinting(true);
+    setPrintError('');
+    try {
+      const result = await window.api.printReceipt(receipt.id);
+      if (!result?.success) setPrintError(result?.message || 'Pencetakan dibatalkan.');
+    } catch { setPrintError('Gagal membuka dialog printer. Jalankan ulang aplikasi.'); }
+    finally { setPrinting(false); }
+  };
 
   const [detail, setDetail] = useState({ open: false, invoice: '', items: [], payments: [] });
   const [payment, setPayment] = useState({
@@ -130,6 +154,7 @@ export default function Orders() {
           renderActions={(o) => (
             <div className="row-actions">
               <IconButton icon="fas fa-eye" variant="primary" title="Detail" onClick={() => openDetail(o.id, o.invoice_number)} />
+              <Button variant="secondary" icon="fas fa-print" title="Cetak Struk" onClick={() => openReceipt(o)}>Cetak</Button>
             </div>
           )}
         />
@@ -150,6 +175,12 @@ export default function Orders() {
         ]} data={detail.payments} emptyText="Belum ada pembayaran." />
       </Modal>
 
+      <Modal id="receipt-preview" isOpen={!!receipt} onClose={() => { if (!printing) setReceipt(null); }} title={`Cetak Struk: ${receipt?.invoice || ''}`} maxWidth={800}>
+        <Alert>{printError}</Alert>
+        <p>Kertas: <strong>{receipt?.paper}</strong>. Pengaturan printer dan thermal mengikuti Pengaturan Toko.</p>
+        <iframe title="Pratinjau Struk" sandbox="" srcDoc={receipt?.html || ''} style={{ width: '100%', height: '45vh', border: '1px solid #ddd', background: 'white', marginBottom: 12 }} />
+        <Button variant="primary" fullWidth icon="fas fa-print" disabled={printing} onClick={printReceipt}>{printing ? 'Mencetak...' : 'Cetak Struk'}</Button>
+      </Modal>
       <Modal id="order-payment" isOpen={payment.open} onClose={() => { if (!paying) setPayment(previous => ({ ...previous, open: false })); }} title="Form Pembayaran" maxWidth={500}>
         <PaymentForm total={payment.sisa} busy={paying} error={paymentError} onSubmit={submitPayment} />
       </Modal>

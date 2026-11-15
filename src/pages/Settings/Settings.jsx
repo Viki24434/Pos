@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import Button from '../../components/Button/Button';
 import Alert from '../../components/Alert/Alert';
 import PaymentMethods from '../../components/PaymentMethods/PaymentMethods';
+import PrintSettings from '../../components/PrintSettings';
 
 export default function Settings() {
   const [storeName, setStoreName] = useState('');
@@ -114,6 +115,7 @@ export default function Settings() {
         </form>
       </div>
       <PaymentMethods />
+      <PrintSettings />
     </div>
   );
 }

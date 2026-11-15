@@ -13,12 +13,16 @@ const Customer = require('../models/Customer.js');
 const Finance = require('../models/Finance.js');
 const { registerCustomerHandlers } = require('../electron/customer-handlers.cjs');
 const { registerPaymentHandlers } = require('../electron/payment-handlers.cjs');
+const { registerPrintHandlers } = require('../electron/receipt.cjs');
 
 let server;
 let window;
 let profile;
 let db;
 let savedPayload;
+let printed = false;
+let expectedPaperWidth = 80000;
+let expectedPrinter = '';
 
 async function evaluate(code) {
     return window.webContents.executeJavaScript(code);
@@ -70,6 +74,19 @@ app.whenReady().then(async () => {
         ipcMain.handle('get-categories', () => []);
         ipcMain.handle('get-units', () => []);
         registerPaymentHandlers(ipcMain);
+        const printWindowFactory = function(options) {
+            const target = new BrowserWindow(options);
+            target.webContents.print = (printOptions, callback) => {
+                assert.equal(printOptions.silent, !!expectedPrinter);
+                assert.equal(printOptions.deviceName, expectedPrinter);
+                assert.equal(printOptions.pageSize.width, expectedPaperWidth);
+                printed = true;
+                callback(true);
+            };
+            return target;
+        };
+        printWindowFactory.fromWebContents = contents => BrowserWindow.fromWebContents(contents);
+        registerPrintHandlers(ipcMain, printWindowFactory);
         ipcMain.handle('get-order-detail', (_event, id) => Order.getOrderItems(id));
         ipcMain.handle('get-finance-summary', (_event, filters) => Finance.getSummary(filters.start, filters.end));
         registerCustomerHandlers(ipcMain);
@@ -89,6 +106,7 @@ app.whenReady().then(async () => {
         window.webContents.on('console-message', event => {
             if (event.level === 'error') console.error('Renderer:', event.message);
         });
+        window.webContents.getPrintersAsync = async () => [{ name: 'THERMAL-TEST', displayName: 'Thermal Test' }];
         await window.loadURL(`${server.resolvedUrls.local[0]}?ui-session=1#/products`);
         await evaluate(`localStorage.setItem('pos_session', JSON.stringify({ id: 1, name: 'Test', role: 'Super Admin' })); true;`);
         await window.loadURL(`${server.resolvedUrls.local[0]}?ui-session=2#/products`);
@@ -154,6 +172,14 @@ app.whenReady().then(async () => {
         assert.equal((await Order.getOrderItems(order.id)).length, 2);
         assert.equal((await db.get('SELECT SUM(amount) as amount FROM payments WHERE order_id = ?', [order.id])).amount, 170000);
         console.log('PASS: cashier keeps variants separate, changes quantities, and completes paid checkout');
+        await evaluate(`document.querySelector('button[title="Cetak Struk"]').click()`);
+        await waitFor(`!!document.querySelector('#receipt-preview iframe')`);
+        assert.ok(await evaluate(`document.querySelector('#receipt-preview iframe').srcdoc.includes('Kaos UI - Merah / XL')`));
+        await clickButton('Cetak Struk');
+        await waitFor(`!document.querySelector('#receipt-preview button[type="button"]:disabled')`);
+        assert.equal(printed, true);
+        await evaluate(`document.querySelector('#receipt-preview .modal-close').click()`);
+        console.log('PASS: receipt preview and native print request without sending paper to a printer');
 
         await evaluate(`location.hash = '#/settings'`);
         await waitFor(`!!document.querySelector('#payment-method-name')`);
@@ -161,6 +187,24 @@ app.whenReady().then(async () => {
         await clickButton('Tambah Metode');
         await waitFor(`document.querySelector('#payment-method-name').value === '' && document.body.innerText.includes('DANA')`);
         console.log('PASS: settings creates a custom payment method');
+        await waitFor(`!!document.querySelector('#receipt-printer-setting option[value="THERMAL-TEST"]')`);
+        await evaluate(`document.querySelector('#receipt-paper-setting').value = '58mm'; document.querySelector('#receipt-paper-setting').dispatchEvent(new Event('change', { bubbles: true }))`);
+        await evaluate(`document.querySelector('#receipt-printer-setting').value = 'THERMAL-TEST'; document.querySelector('#receipt-printer-setting').dispatchEvent(new Event('change', { bubbles: true }))`);
+        await evaluate(`document.querySelector('#receipt-direct-setting').click()`);
+        await clickButton('Simpan Pengaturan Thermal');
+        await waitFor(`document.body.innerText.includes('Pengaturan thermal disimpan')`);
+        expectedPaperWidth = 58000;
+        expectedPrinter = 'THERMAL-TEST';
+        printed = false;
+        await evaluate(`location.hash = '#/orders'`);
+        await waitFor(`!!document.querySelector('button[title="Cetak Struk"]')`);
+        await evaluate(`document.querySelector('button[title="Cetak Struk"]').click()`);
+        await waitFor(`document.querySelector('#receipt-preview')?.innerText.includes('58mm')`);
+        await clickButton('Cetak Struk');
+        await waitFor(`!document.querySelector('#receipt-preview button[type="button"]:disabled')`);
+        assert.equal(printed, true);
+        await evaluate(`document.querySelector('#receipt-preview .modal-close').click()`);
+        console.log('PASS: saved thermal size and printer are automatically used for printing');
 
         await evaluate(`location.hash = '#/orders/create'`);
         await waitFor(`document.querySelectorAll('.product-tile').length === 1`);

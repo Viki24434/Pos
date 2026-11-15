@@ -1,0 +1,26 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import process from 'node:process';
+import { createRequire } from 'node:module';
+process.env.APP_JS_DB_PATH = ':memory:';
+const { getDbConnection } = await import('../config/db.js');
+const { migratePrintSettings } = await import('../config/print-migration.js');
+const { registerPrintHandlers } = createRequire(import.meta.url)('../electron/receipt.cjs');
+test('printer settings persist across initialization and reject unavailable printers', async t => {
+    const db = await getDbConnection();
+    t.after(() => db.close());
+    await db.exec("CREATE TABLE stores (id INTEGER PRIMARY KEY, name TEXT); INSERT INTO stores VALUES (1, 'Toko Lama')");
+    await migratePrintSettings(db);
+    const handlers = new Map();
+    registerPrintHandlers({ handle: (channel, handler) => handlers.set(channel, handler) }, null);
+    const event = { sender: { getPrintersAsync: async () => [{ name: 'THERMAL-TEST' }] } };
+    const save = data => handlers.get('save-print-settings')(event, data);
+    assert.equal((await save({ receipt_paper: '58mm', printer_name: 'THERMAL-TEST', print_direct: true })).success, true);
+    await migratePrintSettings(db);
+    assert.deepEqual(await handlers.get('get-print-settings')(), { receipt_paper: '58mm', printer_name: 'THERMAL-TEST', print_direct: 1 });
+    assert.equal((await db.get('SELECT name FROM stores')).name, 'Toko Lama');
+    assert.equal((await save({ receipt_paper: 'bad' })).success, false);
+    assert.equal((await save({ receipt_paper: '80mm', printer_name: 'MISSING' })).success, false);
+    assert.equal((await save({ receipt_paper: '80mm', print_direct: true })).success, false);
+    assert.equal((await handlers.get('get-print-settings')()).receipt_paper, '58mm');
+});

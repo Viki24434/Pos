@@ -9,7 +9,11 @@ CREATE TABLE IF NOT EXISTS stores (
   phone TEXT DEFAULT NULL,
   address TEXT DEFAULT NULL,
   tax_percentage REAL DEFAULT 0.00,
-  logo TEXT DEFAULT 'default.png'
+  logo TEXT DEFAULT 'default.png',
+  receipt_paper TEXT NOT NULL DEFAULT '80mm',
+  printer_name TEXT NOT NULL DEFAULT '',
+  print_direct INTEGER NOT NULL DEFAULT 0,
+  footer TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS units (

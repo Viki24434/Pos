@@ -178,8 +178,8 @@ ipcMain.handle('save-settings', async (event, data) => {
     try {
         const db = await getDbConnection();
         await db.run(
-            "UPDATE stores SET name=?, phone=?, address=?, logo=? WHERE id=1", 
-            [data.store_name, data.phone, data.address, data.logo || 'default.png']
+            "UPDATE stores SET name=?, phone=?, address=?, footer=?, logo=COALESCE(?, logo) WHERE id=1",
+            [data.store_name, data.phone, data.address, data.footer || '', data.logo || null]
         );
         return true;
     } catch (e) {
@@ -223,18 +223,7 @@ ipcMain.handle('get-order-detail', async (event, id) => {
     }
 });
 
-ipcMain.handle('get-print-data', async (event, id) => {
-    try {
-        const db = await getDbConnection();
-        const order = await db.get("SELECT * FROM orders WHERE id = ?", [id]);
-        const items = (await Order.getOrderItems(id)).map(item => ({ ...item, product_name: item.item_name }));
-        const store = await db.get("SELECT * FROM stores LIMIT 1");
-        
-        return { order: order, items: items, store: store };
-    } catch (e) {
-        return null;
-    }
-});
+require('./receipt.cjs').registerPrintHandlers(ipcMain, BrowserWindow);
 
 ipcMain.handle('get-sales-report', async (event, filter) => {
     try { return await Report.getSalesReport(filter.start, filter.end); } catch (e) { return []; }
