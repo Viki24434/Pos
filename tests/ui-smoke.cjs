@@ -181,6 +181,10 @@ app.whenReady().then(async () => {
         assert.equal(printed, true);
         await evaluate(`document.querySelector('#receipt-preview .modal-close').click()`);
         console.log('PASS: receipt preview and native print request without sending paper to a printer');
+        await evaluate(`location.hash = '#/finance'`);
+        await waitFor(`document.body.innerText.includes('170.000')`);
+        assert.equal(await evaluate(`document.body.innerText.includes('Metode Lain')`), false);
+        console.log('PASS: finance hides other-method cards and columns when only cash and transfer exist');
 
         await evaluate(`location.hash = '#/settings'`);
         await waitFor(`!!document.querySelector('#payment-method-name')`);
@@ -249,6 +253,7 @@ app.whenReady().then(async () => {
         await evaluate(`location.hash = '#/finance'`);
         await waitFor(`document.body.innerText.includes('DANA') && document.body.innerText.includes('35.000')`);
         assert.equal((await Finance.getSummary('', '')).saldoOther, 35000);
+        assert.equal(await evaluate(`document.body.innerText.includes('Saldo Metode Lain')`), true);
         console.log('PASS: custom-method receipts appear in the finance page');
 
         await evaluate(`location.hash = '#/customers'`);

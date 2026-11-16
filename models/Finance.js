@@ -68,7 +68,9 @@ async function getSummary(startDate, endDate) {
         WHERE store_id = ? AND (? = '' OR DATE(created_at) >= ?) AND (? = '' OR DATE(created_at) <= ?)
         GROUP BY payment_method ORDER BY payment_method`, [STORE_ID, startDate || '', startDate || '', endDate || '', endDate || '']);
 
+    const otherMethod = await db.get("SELECT id FROM payment_methods WHERE store_id = ? AND kind = 'other' AND active = 1 LIMIT 1", [STORE_ID]);
     return {
+        hasOtherMethods: !!otherMethod || Number(summaryRow.saldo_other) !== 0 || tableRows.some(row => Number(row.other_revenue) !== 0),
         saldoKas: summaryRow.saldo_cash || 0,
         saldoTf: summaryRow.saldo_tf || 0,
         saldoQris: summaryRow.saldo_qris || 0,
