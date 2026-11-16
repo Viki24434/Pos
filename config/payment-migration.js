@@ -9,7 +9,7 @@ async function migratePayments(db) {
         UNIQUE(store_id, name)
     );
     INSERT OR IGNORE INTO payment_methods (store_id, name, kind)
-        VALUES (1, 'Cash', 'cash'), (1, 'Transfer', 'transfer'), (1, 'QRIS', 'qris');`);
+        VALUES (1, 'Cash', 'cash'), (1, 'Transfer', 'transfer');`);
     const table = await db.get("SELECT sql FROM sqlite_master WHERE type='table' AND name='payments'");
     if (table && /CHECK\s*\(\s*payment_method\s+IN/i.test(table.sql)) {
         const sequence = await db.get("SELECT seq FROM sqlite_sequence WHERE name='payments'");
@@ -32,7 +32,7 @@ async function migratePayments(db) {
     }
     await db.run(`INSERT OR IGNORE INTO payment_methods (store_id, name, kind)
         SELECT DISTINCT store_id, payment_method, CASE payment_method
-            WHEN 'Cash' THEN 'cash' WHEN 'Transfer' THEN 'transfer' WHEN 'QRIS' THEN 'qris' ELSE 'other' END FROM payments`);
+            WHEN 'Cash' THEN 'cash' WHEN 'Transfer' THEN 'transfer' ELSE 'other' END FROM payments`);
     const paymentColumns = await db.all('PRAGMA table_info(payments)');
     if (!paymentColumns.some(column => column.name === 'payment_method_id')) {
         await db.exec('ALTER TABLE payments ADD COLUMN payment_method_id INTEGER REFERENCES payment_methods(id)');
@@ -46,6 +46,13 @@ async function migratePayments(db) {
     if (!columns.some(column => column.name === 'other_revenue')) {
         await db.exec('ALTER TABLE finance ADD COLUMN other_revenue DECIMAL(15,2) DEFAULT 0.00');
     }
+    // Remove the old unused QRIS default, while retaining methods used by receipts.
+    await db.run(`DELETE FROM payment_methods WHERE kind = 'qris' AND name = 'QRIS' COLLATE NOCASE AND NOT EXISTS (
+        SELECT 1 FROM payments WHERE payments.payment_method_id = payment_methods.id
+        OR (payments.store_id = payment_methods.store_id AND payments.payment_method = payment_methods.name COLLATE NOCASE)
+    )`);
+    await db.run("UPDATE payment_methods SET kind = 'other' WHERE kind = 'qris'");
+    await db.run('UPDATE finance SET other_revenue = COALESCE(other_revenue, 0) + COALESCE(qris_revenue, 0), qris_revenue = 0 WHERE COALESCE(qris_revenue, 0) != 0');
 }
 
 export { migratePayments };

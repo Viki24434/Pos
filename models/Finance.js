@@ -15,7 +15,6 @@ async function updateBalance(date) {
     payRows.forEach(row => {
         if (row.kind === 'cash') cr += Number(row.total);
         else if (row.kind === 'transfer') tr += Number(row.total);
-        else if (row.kind === 'qris') qr += Number(row.total);
         else other += Number(row.total);
     });
 

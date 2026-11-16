@@ -36,7 +36,9 @@ test('payments, custom methods and existing database upgrade', async t => {
         assert.equal((await db.get("SELECT seq FROM sqlite_sequence WHERE name = 'payments'")).seq, 100);
         assert.equal((await db.all('PRAGMA foreign_key_check')).length, 0);
         assert.ok((await db.all('PRAGMA index_list(payments)')).some(index => index.name === 'idx_payments_order_id'));
-        assert.equal((await PaymentMethod.getAll()).length, 3);
+        assert.deepEqual((await PaymentMethod.getAll()).map(method => method.name), ['Cash', 'Transfer']);
+        await PaymentMethod.create({ name: 'QRIS' });
+        assert.equal((await PaymentMethod.getAll()).find(method => method.name === 'QRIS').kind, 'other');
     });
 
     let dana;
@@ -107,9 +109,10 @@ test('payments, custom methods and existing database upgrade', async t => {
     await t.test('custom payments are included in finance balances and method totals', async () => {
         await PaymentMethod.setActive(dana.id, false);
         const summary = await Finance.getSummary('', '');
-        assert.equal(summary.saldoOther, 100000);
+        assert.equal(summary.saldoOther, 160000);
+        assert.equal(summary.saldoQris, 0);
         assert.equal(summary.methods.find(method => method.name === 'DANA').total, 100000);
-        assert.ok(summary.rekap.some(row => row.other_in === 100000));
+        assert.ok(summary.rekap.some(row => row.other_in === 160000));
         assert.equal(summary.totalPiutang, 75000);
         await PaymentMethod.setActive(dana.id, true);
     });
@@ -145,5 +148,18 @@ test('payments, custom methods and existing database upgrade', async t => {
         await Order.addPayment(id, 7, 'QRIS', 50000);
         assert.equal((await Order.getOrderPayments(id)).length, 3);
         assert.equal((await Order.getOrderById(id)).payment_status, 'Lunas');
+    });
+    await t.test('legacy QRIS balances move to other methods once while payment history is retained', async () => {
+        const before = await Finance.getSummary('', '');
+        const count = (await db.get('SELECT COUNT(*) as count FROM payments')).count;
+        await db.run("UPDATE payment_methods SET kind = 'qris' WHERE name = 'QRIS'");
+        await db.run('UPDATE finance SET qris_revenue = 100, other_revenue = other_revenue - 100 WHERE id = (SELECT MIN(id) FROM finance)');
+        await withTransaction(migratePayments);
+        await withTransaction(migratePayments);
+        const after = await Finance.getSummary('', '');
+        assert.equal(after.saldoOther, before.saldoOther);
+        assert.equal(after.saldoQris, 0);
+        assert.equal((await PaymentMethod.getAll()).find(method => method.name === 'QRIS').kind, 'other');
+        assert.equal((await db.get('SELECT COUNT(*) as count FROM payments')).count, count);
     });
 });

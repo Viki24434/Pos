@@ -162,7 +162,7 @@ CREATE TABLE IF NOT EXISTS payment_methods (
   active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
   UNIQUE(store_id, name)
 );
-INSERT OR IGNORE INTO payment_methods (store_id, name, kind) VALUES (1, 'Cash', 'cash'), (1, 'Transfer', 'transfer'), (1, 'QRIS', 'qris');
+INSERT OR IGNORE INTO payment_methods (store_id, name, kind) VALUES (1, 'Cash', 'cash'), (1, 'Transfer', 'transfer');
 
 CREATE TABLE IF NOT EXISTS payments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
