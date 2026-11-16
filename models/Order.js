@@ -2,6 +2,7 @@ import { getDbConnection, withTransaction } from '../config/db.js';
 import { updateBalance } from './Finance.js';
 import { randomUUID } from 'node:crypto';
 import { requireActive } from './PaymentMethod.js';
+import { getSellingPrice } from '../shared/pricing.js';
 const STORE_ID = 1;
 
 async function getAllOrders(filters = {}) {
@@ -55,11 +56,13 @@ async function createOrder(customer_name, items, tax_amount, discount, customer_
     return withTransaction(async db => {
         if (!Array.isArray(items) || !items.length) throw new Error('Keranjang masih kosong.');
         customer_id = Number(customer_id);
+        let isVip = false;
         if (!Number.isSafeInteger(customer_id) || customer_id < 0) throw new Error('Pelanggan tidak valid.');
         if (customer_id > 0) {
-            const customer = await db.get('SELECT name FROM customers WHERE id = ? AND store_id = ?', [customer_id, STORE_ID]);
+            const customer = await db.get('SELECT name, status FROM customers WHERE id = ? AND store_id = ?', [customer_id, STORE_ID]);
             if (!customer) throw new Error('Pelanggan tidak ditemukan. Silakan pilih kembali pelanggan.');
             customer_name = customer.name;
+            isVip = customer.status === 'VIP';
         }
         tax_amount = Number(tax_amount);
         discount = Number(discount);
@@ -81,7 +84,8 @@ async function createOrder(customer_name, items, tax_amount, discount, customer_
                 throw new Error(`Varian ${product.name} sudah tidak tersedia.`);
             }
             const source = variant || product;
-            if (Number(item.price) !== Number(source.price)) throw new Error(`Harga ${product.name} berubah. Muat ulang produk sebelum melanjutkan.`);
+            const sellingPrice = getSellingPrice(source, isVip);
+            if (Number(item.price) !== sellingPrice) throw new Error(`Harga ${product.name} berubah. Muat ulang produk sebelum melanjutkan.`);
             // Deduct immediately inside this transaction so duplicate cart lines cannot oversell.
             const result = variant
                 ? await db.run('UPDATE product_variants SET stock = stock - ? WHERE id = ? AND active = 1 AND stock >= ?', [qty, variant.id, qty])
@@ -90,7 +94,7 @@ async function createOrder(customer_name, items, tax_amount, discount, customer_
             if (variant) await db.run(`UPDATE products SET stock = (SELECT COALESCE(SUM(stock), 0)
                 FROM product_variants WHERE product_id = ? AND active = 1) WHERE id = ?`, [product.id, product.id]);
             checkedItems.push({ product_id: product.id, variant_id: variant?.id ?? null, variant_name: variant?.name ?? null,
-                variant_sku: variant?.sku ?? null, qty, price: Number(source.price), subtotal: Number(source.price) * qty });
+                variant_sku: variant?.sku ?? null, qty, price: sellingPrice, subtotal: sellingPrice * qty });
         }
         const invoice = `INV-${Date.now()}-${randomUUID().slice(0, 8)}`;
         let subtotal = 0;

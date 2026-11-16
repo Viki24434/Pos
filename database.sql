@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS products (
   unit_id INTEGER DEFAULT NULL,
   store_id INTEGER NOT NULL,
   purchase_price DECIMAL(15,2) DEFAULT 0.00,
+  vip_price REAL DEFAULT NULL CHECK(vip_price IS NULL OR vip_price >= 0),
   name VARCHAR(150) NOT NULL,
   price DECIMAL(10,2) NOT NULL,
   stock INTEGER DEFAULT 0,
@@ -99,6 +100,7 @@ CREATE TABLE IF NOT EXISTS product_variants (
   product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   sku TEXT,
+  vip_price REAL DEFAULT NULL CHECK(vip_price IS NULL OR vip_price >= 0),
   price REAL NOT NULL CHECK(price >= 0),
   stock INTEGER NOT NULL DEFAULT 0 CHECK(stock >= 0),
   active INTEGER NOT NULL DEFAULT 1

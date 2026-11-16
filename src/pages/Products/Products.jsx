@@ -10,7 +10,7 @@ import PageHeader from '../../components/PageHeader/PageHeader';
 import { formatRp } from '../../utils/format';
 import './Products.css';
 
-const EMPTY_PRODUCT = { id: '', code: '', name: '', category_id: '', unit_id: '', price: '', stock: '0', variants: [] };
+const EMPTY_PRODUCT = { id: '', code: '', name: '', category_id: '', unit_id: '', price: '', vip_price: '', stock: '0', variants: [] };
 const EMPTY_CATEGORY = { id: '', name: '' };
 const EMPTY_UNIT = { id: '', name: '', symbol: '' };
 
@@ -69,6 +69,7 @@ export default function Products() {
             category_id: product.category_id || '',
             unit_id: product.unit_id || '',
             price: product.price ?? '',
+            vip_price: product.vip_price ?? '',
             stock: product.stock || '0',
             variants: (product.variants || []).map(variant => ({ ...variant, key: `saved-${variant.id}` })),
           }
@@ -84,7 +85,7 @@ export default function Products() {
   const addVariant = () => setProductModal(previous => ({
     ...previous,
     form: { ...previous.form, variants: [...previous.form.variants, {
-      key: crypto.randomUUID(), name: '', sku: '', price: previous.form.price || '0', stock: '0',
+      key: crypto.randomUUID(), name: '', sku: '', vip_price: '', price: previous.form.price || '0', stock: '0',
     }] },
   }));
 
@@ -124,10 +125,11 @@ export default function Products() {
         category_id: form.category_id || null,
         unit_id: form.unit_id || null,
         price: parseFloat(form.price),
+        vip_price: form.vip_price === '' ? null : Number(form.vip_price),
         stock: parseInt(form.stock),
         img: imageName,
         variants: form.variants.map(variant => ({
-          id: variant.id, name: variant.name, sku: variant.sku, price: Number(variant.price), stock: Number(variant.stock),
+          vip_price: variant.vip_price == null || variant.vip_price === '' ? null : Number(variant.vip_price), id: variant.id, name: variant.name, sku: variant.sku, price: Number(variant.price), stock: Number(variant.stock),
         })),
       };
 
@@ -382,6 +384,7 @@ export default function Products() {
             </div>
           </div>
 
+          {!productModal.form.variants.length && <Input label="Harga VIP (Rp, Opsional)" type="number" min="0" step="0.01" placeholder="Kosongkan untuk memakai harga biasa" value={productModal.form.vip_price} onChange={event => setProductModal({ ...productModal, form: { ...productModal.form, vip_price: event.target.value } })} />}
           <section className="variant-editor">
             <div className="variant-editor-heading">
               <div><strong>Varian Produk</strong><p>Contoh: Merah / XL atau A4 / Glossy. Setiap varian memiliki harga dan stok sendiri.</p></div>
@@ -393,6 +396,7 @@ export default function Products() {
                 <Input label={`Nama Varian ${index + 1} *`} placeholder="Merah / XL" required value={variant.name} onChange={e => updateVariant(variant.key, 'name', e.target.value)} />
                 <Input label="SKU (Opsional)" value={variant.sku} onChange={e => updateVariant(variant.key, 'sku', e.target.value)} />
                 <Input label="Harga (Rp) *" type="number" min="0" step="0.01" required value={variant.price} onChange={e => updateVariant(variant.key, 'price', e.target.value)} />
+                <Input label="Harga VIP (Opsional)" type="number" min="0" step="0.01" placeholder="Harga biasa" value={variant.vip_price ?? ''} onChange={event => updateVariant(variant.key, 'vip_price', event.target.value)} />
                 <Input label="Stok *" type="number" min="0" step="1" required value={variant.stock} onChange={e => updateVariant(variant.key, 'stock', e.target.value)} />
                 <Button variant="danger" aria-label={`Hapus varian ${index + 1}`} onClick={() => removeVariant(variant.key)}><i className="fas fa-trash"></i></Button>
               </div>

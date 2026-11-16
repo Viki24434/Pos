@@ -68,9 +68,13 @@ async function saveProduct(id, data) {
                 throw new Error('ID varian tidak valid.');
             }
             if (variantId) ids.add(variantId);
-            return { id: variantId, name: variantName, sku, price: nonNegative(variant.price, 'Harga varian'), stock: nonNegative(variant.stock, 'Stok varian', true) };
+            const vipInput = variant.vip_price === undefined ? previousVariants.find(row => row.id === variantId)?.vip_price : variant.vip_price;
+            const vip_price = vipInput == null || vipInput === '' ? null : nonNegative(vipInput, 'Harga VIP varian');
+            return { vip_price, id: variantId, name: variantName, sku, price: nonNegative(variant.price, 'Harga varian'), stock: nonNegative(variant.stock, 'Stok varian', true) };
         });
         const price = variants.length ? Math.min(...variants.map(v => v.price)) : nonNegative(data.price, 'Harga produk');
+        const vipInput = data.vip_price === undefined ? existing?.vip_price : data.vip_price;
+        const vipPrice = vipInput == null || vipInput === '' ? null : nonNegative(vipInput, 'Harga VIP');
         const stock = variants.length ? variants.reduce((sum, v) => sum + v.stock, 0) : nonNegative(data.stock ?? 0, 'Stok produk', true);
         const params = [data.category_id || null, data.unit_id || null, code, name,
             data.purchase_price ?? existing?.purchase_price ?? 0, price, stock, data.img || existing?.img || 'default.png'];
@@ -84,14 +88,15 @@ async function saveProduct(id, data) {
             id = result.lastID;
         }
         // Keep removed variants for historical order references.
+        await db.run('UPDATE products SET vip_price = ? WHERE id = ?', [vipPrice, id]);
         await db.run('UPDATE product_variants SET active = 0 WHERE product_id = ?', [id]);
         for (const variant of variants) {
             if (variant.id) {
-                await db.run('UPDATE product_variants SET name=?, sku=?, price=?, stock=?, active=1 WHERE id=? AND product_id=?',
-                    [variant.name, variant.sku, variant.price, variant.stock, variant.id, id]);
+                await db.run('UPDATE product_variants SET name=?, sku=?, price=?, stock=?, vip_price=?, active=1 WHERE id=? AND product_id=?',
+                    [variant.name, variant.sku, variant.price, variant.stock, variant.vip_price, variant.id, id]);
             } else {
-                await db.run('INSERT INTO product_variants (product_id, name, sku, price, stock) VALUES (?, ?, ?, ?, ?)',
-                    [id, variant.name, variant.sku, variant.price, variant.stock]);
+                await db.run('INSERT INTO product_variants (product_id, name, sku, price, stock, vip_price) VALUES (?, ?, ?, ?, ?, ?)',
+                    [id, variant.name, variant.sku, variant.price, variant.stock, variant.vip_price]);
             }
         }
         return result;

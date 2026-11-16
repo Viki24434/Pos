@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import process from 'node:process';
 import { migratePayments } from './payment-migration.js';
 import { migratePrintSettings } from './print-migration.js';
+import { migrateVipPrices } from './vip-migration.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -135,6 +136,7 @@ async function inisialisasiDatabase() {
         }
 
         await migrateProductVariants(db);
+        await withTransaction(migrateVipPrices);
         await migrateCustomerStatus(db);
         await withTransaction(migratePayments);
         await withTransaction(migratePrintSettings);

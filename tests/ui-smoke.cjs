@@ -118,6 +118,7 @@ app.whenReady().then(async () => {
         await fill('.variant-editor-row:nth-child(2) input', 'Merah / XL');
         await fill('.variant-editor-row:nth-child(2) input[type="number"]', 60000);
         await fill('.variant-editor-row:nth-child(2) input[step="1"]', 5);
+        await fill('.variant-editor-row:nth-child(2) input[placeholder="Harga biasa"]', 45000);
         await clickButton('Tambah Varian');
         await fill('.variant-editor-row:nth-child(3) input', 'Biru / L');
         await fill('.variant-editor-row:nth-child(3) input[type="number"]', 55000);
@@ -277,6 +278,7 @@ app.whenReady().then(async () => {
         await clickButton('Simpan Pesanan (Bayar Nanti)');
         await waitFor(`document.body.innerText.includes('Riwayat Pesanan') && document.body.innerText.includes('Pelanggan UI') && document.body.innerText.includes('VIP')`);
         const vipOrder = await db.get('SELECT * FROM orders ORDER BY id DESC LIMIT 1');
+        assert.equal(vipOrder.total_amount, 45000);
         assert.equal(vipOrder.customer_id, customer.id);
         assert.equal(vipOrder.customer_name, 'Pelanggan UI');
         console.log('PASS: selecting a VIP links the customer to the order and displays VIP in history');

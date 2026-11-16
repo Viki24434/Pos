@@ -12,6 +12,7 @@ import PaymentForm from '../../components/PaymentForm/PaymentForm';
 import { useAuth } from '../../context/AuthContext';
 import { formatRp } from '../../utils/format';
 import './Create.css';
+import { getSellingPrice } from '../../../shared/pricing';
 
 const ITEMS_PER_PAGE = 12; // Jumlah produk per halaman
 
@@ -32,6 +33,13 @@ export default function CreateOrder() {
   const [customerId, setCustomerId] = useState('');
   const [customerError, setCustomerError] = useState('');
   const selectedCustomer = customers.find(customer => String(customer.id) === customerId);
+  const isVip = selectedCustomer?.status === 'VIP';
+  const pricedCart = cart.map(item => {
+    const product = products.find(row => row.id === item.product_id);
+    const source = item.variant_id ? product?.variants?.find(row => row.id === item.variant_id) : product;
+    const price = source ? getSellingPrice(source, isVip) : item.price;
+    return { ...item, price, subtotal: price * item.qty };
+  });
 
   useEffect(() => {
     let active = true;
@@ -80,7 +88,7 @@ export default function CreateOrder() {
       return;
     }
     const stock = variant ? variant.stock : product.stock;
-    const price = Number(variant ? variant.price : product.price);
+    const price = getSellingPrice(variant || product, isVip);
     if (stock <= 0) return;
     const key = `${product.id}:${variant?.id || 'base'}`;
 
@@ -129,7 +137,7 @@ export default function CreateOrder() {
     setCart((prevCart) => prevCart.filter((item) => item.key !== key));
   };
 
-  const subtotal = Math.round(cart.reduce((acc, item) => acc + item.subtotal, 0) * 100) / 100;
+  const subtotal = Math.round(pricedCart.reduce((acc, item) => acc + item.subtotal, 0) * 100) / 100;
   const discValue = parseFloat(discount) || 0;
   const grandTotal = Math.max(0, Math.round((subtotal - discValue) * 100) / 100);
 
@@ -161,7 +169,7 @@ export default function CreateOrder() {
       const payload = {
         customerName: selectedCustomer?.name || customerName.trim() || 'Umum',
         customerId: customerId ? Number(customerId) : 0,
-        items: cart,
+        items: pricedCart,
         discount: discValue,
         grandTotal,
         amountPaid: amount,
@@ -313,7 +321,7 @@ export default function CreateOrder() {
                     />
                     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', overflow: 'hidden' }}>
                       <b style={{ fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</b>
-                      <span style={{ color: 'var(--primary)', fontWeight: 'bold', fontSize: '13px' }}>{p.variants?.length ? 'Mulai ' : ''}{formatRp(p.price)}</span>
+                      <span style={{ color: 'var(--primary)', fontWeight: 'bold', fontSize: '13px' }}>{p.variants?.length ? 'Mulai ' : ''}{formatRp(p.variants?.length ? Math.min(...p.variants.map(variant => getSellingPrice(variant, isVip))) : getSellingPrice(p, isVip))}</span>
                       {!!p.variants?.length && <small className="product-variant-count">Pilih {p.variants.length} varian</small>}
                     </div>
                   </div>
@@ -367,7 +375,7 @@ export default function CreateOrder() {
           />}
 
           <div className="cart-table-wrapper">
-            <Table columns={cartColumns} data={cart} keyField="key" emptyText="Keranjang kosong" />
+            <Table columns={cartColumns} data={pricedCart} keyField="key" emptyText="Keranjang kosong" />
           </div>
 
           <div className="cart-summary">
@@ -405,7 +413,7 @@ export default function CreateOrder() {
           {variantProduct?.variants.map(variant => (
             <button type="button" className="variant-option" key={variant.id} disabled={variant.stock <= 0} onClick={() => addToCart(variantProduct, variant)}>
               <div><strong>{variant.name}</strong>{variant.sku && <small>SKU: {variant.sku}</small>}</div>
-              <div><strong>{formatRp(variant.price)}</strong><small>{variant.stock > 0 ? `Stok: ${variant.stock}` : 'Stok habis'}</small></div>
+              <div><strong>{formatRp(getSellingPrice(variant, isVip))}</strong><small>{variant.stock > 0 ? `Stok: ${variant.stock}` : 'Stok habis'}</small></div>
             </button>
           ))}
         </div>
