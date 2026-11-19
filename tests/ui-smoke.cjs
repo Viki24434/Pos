@@ -195,6 +195,23 @@ app.whenReady().then(async () => {
 
         await evaluate(`location.hash = '#/settings'`);
         await waitFor(`!!document.querySelector('#payment-method-name')`);
+        if (process.env.APP_JS_UI_SCREENSHOTS) {
+            await waitFor(`!!document.querySelector('#receipt-printer-setting option[value="THERMAL-TEST"]')`);
+            await new Promise(resolve => setTimeout(resolve, 350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'settings-desktop.png'), (await window.webContents.capturePage()).toPNG());
+            await evaluate(`document.querySelector('.backup-card').scrollIntoView({ block: 'center' })`);
+            await new Promise(resolve => setTimeout(resolve, 350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'backup-desktop.png'), (await window.webContents.capturePage()).toPNG());
+            window.setSize(720, 1000);
+            await evaluate(`window.scrollTo(0, 0)`);
+            await new Promise(resolve => setTimeout(resolve, 350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'settings-narrow.png'), (await window.webContents.capturePage()).toPNG());
+            await evaluate(`document.querySelector('.backup-card').scrollIntoView({ block: 'center' })`);
+            await new Promise(resolve => setTimeout(resolve, 350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'backup-narrow.png'), (await window.webContents.capturePage()).toPNG());
+            window.setSize(1280, 900);
+            await evaluate(`window.scrollTo(0, 0)`);
+        }
         await fill('#payment-method-name', 'DANA');
         await clickButton('Tambah Metode');
         await waitFor(`document.querySelector('#payment-method-name').value === '' && document.body.innerText.includes('DANA')`);

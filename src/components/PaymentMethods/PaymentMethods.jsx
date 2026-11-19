@@ -32,13 +32,13 @@ export default function PaymentMethods() {
   };
 
   return (
-    <div className="card" style={{ maxWidth: 700, margin: 0 }}>
+    <div className="card settings-card">
       <h3>Metode Pembayaran</h3>
       <p>Tambahkan metode seperti debit, DANA, atau ShopeePay. Metode tambahan masuk ke saldo Metode Lain pada rekap keuangan.</p>
       <Alert>{error}</Alert>
-      <form onSubmit={event => { event.preventDefault(); mutate(() => window.api.createPaymentMethod({ name })); }} style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 20 }}>
-        <div style={{ flex: 1 }}><Input id="payment-method-name" label="Nama Metode" placeholder="Contoh: DANA" required maxLength={60} value={name} onChange={event => setName(event.target.value)} /></div>
-        <Button type="submit" disabled={busy} style={{ marginBottom: 16 }}>Tambah Metode</Button>
+      <form onSubmit={event => { event.preventDefault(); mutate(() => window.api.createPaymentMethod({ name })); }} className="settings-payment-add">
+        <div className="settings-payment-name"><Input id="payment-method-name" label="Nama Metode" placeholder="Contoh: DANA" required maxLength={60} value={name} onChange={event => setName(event.target.value)} /></div>
+        <Button type="submit" disabled={busy}>Tambah Metode</Button>
       </form>
       <Table columns={[{ key: 'name', label: 'Metode' }, { key: 'active', label: 'Status', render: row => row.active ? 'Aktif' : 'Nonaktif' }]} data={methods}
         renderActions={row => <Button disabled={busy} variant="secondary" onClick={() => mutate(() => window.api.setPaymentMethodActive(row.id, !row.active))}>{row.active ? 'Nonaktifkan' : 'Aktifkan'}</Button>} />

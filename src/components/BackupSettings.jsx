@@ -38,16 +38,31 @@ export default function BackupSettings() {
     finally { setBusy(false); }
   };
   return (
-    <div className="card" style={{ maxWidth: 700, margin: 0 }}>
+    <div className="card settings-card backup-card">
       <h3>Backup Data</h3>
-      <p>Simpan produk, pelanggan, pesanan, pembayaran, akun pengguna, dan pengaturan dalam file database SQLite. Gambar produk tersimpan terpisah.</p>
       <Alert>{error}</Alert>
-      {backup && <Alert variant="success">Backup berhasil disimpan di <span style={{ overflowWrap: 'anywhere' }}>{backup.path}</span> ({Math.ceil(backup.size / 1024)} KB).</Alert>}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <Button variant="primary" icon="fas fa-download" disabled={busy || restoring} onClick={saveBackup}>{busy ? 'Menyiapkan backup...' : 'Backup Database'}</Button>
-        <Button variant="secondary" icon="fas fa-upload" disabled={busy || restoring} onClick={restore}>Pulihkan Backup</Button>
+      {backup && <Alert variant="success">
+        <strong>Backup berhasil disimpan</strong>
+        <span className="backup-file-path">{backup.path}</span>
+        <small>{Math.ceil(backup.size / 1024)} KB</small>
+      </Alert>}
+      <div className="backup-actions">
+        <section className="backup-action">
+          <div>
+            <h4>Simpan Cadangan</h4>
+            <p>Simpan salinan data aplikasi ke file .sqlite di lokasi pilihan Anda.</p>
+          </div>
+          <Button variant="primary" icon="fas fa-download" disabled={busy || restoring} onClick={saveBackup}>{busy ? 'Menyiapkan backup...' : 'Backup Database'}</Button>
+        </section>
+        <section className="backup-action">
+          <div>
+            <h4>Pulihkan Data</h4>
+            <p>Kembalikan data dari file backup. Data saat ini dicadangkan otomatis sebelum pemulihan, lalu Anda diminta login ulang.</p>
+          </div>
+          <Button variant="secondary" icon="fas fa-upload" disabled={busy || restoring} onClick={restore}>Pulihkan Backup</Button>
+        </section>
       </div>
-      <p>Pemulihan mengembalikan data ke kondisi saat backup dibuat. Aplikasi membuat cadangan data saat ini secara otomatis dan meminta login ulang setelah selesai.</p>
+      <p className="backup-note">Backup mencakup produk, pelanggan, pesanan, pembayaran, akun, dan pengaturan. Gambar produk dicadangkan terpisah.</p>
       <Modal isOpen={restoring} title="Pemulihan Backup" onClose={() => {}}>
         <p>Ikuti dialog pemilihan dan konfirmasi. Tunggu sampai proses pemulihan selesai.</p>
       </Modal>

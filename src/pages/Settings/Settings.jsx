@@ -4,6 +4,8 @@ import Alert from '../../components/Alert/Alert';
 import PaymentMethods from '../../components/PaymentMethods/PaymentMethods';
 import PrintSettings from '../../components/PrintSettings';
 import BackupSettings from '../../components/BackupSettings';
+import PageHeader from '../../components/PageHeader/PageHeader';
+import './Settings.css';
 
 export default function Settings() {
   const [storeName, setStoreName] = useState('');
@@ -51,15 +53,15 @@ export default function Settings() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div className="settings-page">
       <Alert variant="error">{error}</Alert>
       <Alert variant="success">{message}</Alert>
 
-      <div style={{ marginBottom: '20px' }}>
-        <h2><i className="fas fa-cogs"></i> Pengaturan Toko</h2>
-      </div>
+      <PageHeader title="Pengaturan Toko" icon="fas fa-cogs" />
 
-      <div className="card" style={{ maxWidth: '700px', margin: '0' }}>
+      <div className="settings-grid">
+      <div className="card settings-card settings-store-card">
+        <h3>Informasi Toko</h3>
         <form onSubmit={handleSubmit}>
           <div className="input-group">
             <label>Nama Toko / Percetakan</label>
@@ -115,9 +117,10 @@ export default function Settings() {
           </Button>
         </form>
       </div>
-      <PaymentMethods />
       <PrintSettings />
+      <PaymentMethods />
       <BackupSettings />
+      </div>
     </div>
   );
 }

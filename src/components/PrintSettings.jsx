@@ -35,7 +35,7 @@ export default function PrintSettings() {
     finally { setBusy(false); }
   };
   return (
-    <div className="card" style={{ maxWidth: 700, margin: 0 }}>
+    <div className="card settings-card">
       <h3>Pengaturan Thermal / Printer</h3>
       <Alert>{error}</Alert><Alert variant="success">{message}</Alert>
       <form onSubmit={save}>
