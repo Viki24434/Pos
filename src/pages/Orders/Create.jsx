@@ -13,6 +13,7 @@ import { useAuth } from '../../context/AuthContext';
 import { formatRp } from '../../utils/format';
 import './Create.css';
 import { getSellingPrice } from '../../../shared/pricing';
+import { getBonusQuantity } from '../../../shared/promotions';
 
 const ITEMS_PER_PAGE = 12; // Jumlah produk per halaman
 
@@ -39,7 +40,7 @@ export default function CreateOrder() {
     const product = products.find(row => row.id === item.product_id);
     const source = item.variant_id ? product?.variants?.find(row => row.id === item.variant_id) : product;
     const price = source ? getSellingPrice(source, isVip, item.qty) : item.price;
-    return { ...item, price, subtotal: price * item.qty };
+    return { ...item, price, bonus_qty: source ? getBonusQuantity(source, item.qty) : 0, subtotal: price * item.qty };
   });
 
   useEffect(() => {
@@ -96,7 +97,7 @@ export default function CreateOrder() {
     setCart((prevCart) => {
       const existing = prevCart.find((item) => item.key === key);
       if (existing) {
-        if (existing.qty >= stock) {
+        if (existing.qty + 1 + getBonusQuantity(variant || product, existing.qty + 1) > stock) {
           alert(`Stok tidak mencukupi! Sisa stok hanya ${stock}.`);
           return prevCart;
         }
@@ -105,6 +106,10 @@ export default function CreateOrder() {
             ? { ...item, qty: item.qty + 1, subtotal: (item.qty + 1) * item.price }
             : item
         );
+      }
+      if (1 + getBonusQuantity(variant || product, 1) > stock) {
+        alert('Stok tidak cukup untuk barang dan bonus promo.');
+        return prevCart;
       }
       return [...prevCart, { key, product_id: product.id, variant_id: variant?.id ?? null,
         name: variant ? `${product.name} - ${variant.name}` : product.name, price, qty: 1, subtotal: price }];
@@ -121,7 +126,8 @@ export default function CreateOrder() {
             const stock = item.variant_id ? productRef?.variants?.find(v => v.id === item.variant_id)?.stock : productRef?.stock;
             const newQty = item.qty + delta;
             
-            if (newQty > (stock ?? 0)) {
+            const source = item.variant_id ? productRef?.variants?.find(v => v.id === item.variant_id) : productRef;
+            if (newQty > 0 && newQty + getBonusQuantity(source || {}, newQty) > (stock ?? 0)) {
               alert(`Stok tidak mencukupi! Sisa stok hanya ${stock ?? 0}.`);
               return item;
             }
@@ -213,13 +219,13 @@ export default function CreateOrder() {
   const currentProducts = filteredProducts.slice(startIndex, startIndex + ITEMS_PER_PAGE);
 
   const cartColumns = [
-    { key: 'name', label: 'Item', render: item => <div>{item.name}<small className="cart-unit-price">{formatRp(item.price)} / satuan</small></div> },
+    { key: 'name', label: 'Item', render: item => <div>{item.name}<small className="cart-unit-price">{item.is_free ? 'Gratis' : `${formatRp(item.price)} / satuan`}</small></div> },
     {
       key: 'qty',
       label: 'Qty',
       headerStyle: { width: 70, textAlign: 'center' },
       cellStyle: { textAlign: 'center' },
-      render: (item) => (
+      render: (item) => item.is_free ? <span>{item.qty}</span> : (
         <div className="qty-stepper">
           <button type="button" onClick={() => updateQty(item.key, -1)}>-</button>
           <span>{item.qty}</span>
@@ -232,14 +238,14 @@ export default function CreateOrder() {
       label: 'Sub',
       headerStyle: { textAlign: 'right' },
       cellStyle: { textAlign: 'right' },
-      render: (item) => formatRp(item.subtotal),
+      render: (item) => item.is_free ? <span className="cart-bonus">Gratis</span> : formatRp(item.subtotal),
     },
     {
       key: 'remove',
       label: '',
       headerStyle: { width: 30 },
       cellStyle: { textAlign: 'center' },
-      render: (item) => <IconButton icon="fas fa-trash" variant="danger" onClick={() => removeFromCart(item.key)} title="Hapus" />,
+      render: (item) => !item.is_free && <IconButton icon="fas fa-trash" variant="danger" onClick={() => removeFromCart(item.key)} title="Hapus" />,
     },
   ];
 
@@ -377,7 +383,7 @@ export default function CreateOrder() {
           />}
 
           <div className="cart-table-wrapper">
-            <Table columns={cartColumns} data={pricedCart} keyField="key" emptyText="Keranjang kosong" />
+            <Table columns={cartColumns} data={pricedCart.flatMap(item => item.bonus_qty ? [item, { ...item, key: `${item.key}:bonus`, name: `${item.name} (Gratis)`, qty: item.bonus_qty, price: 0, subtotal: 0, is_free: true }] : [item])} keyField="key" emptyText="Keranjang kosong" />
           </div>
 
           <details className="order-notes">

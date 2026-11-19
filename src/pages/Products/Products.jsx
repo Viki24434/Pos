@@ -10,9 +10,11 @@ import PageHeader from '../../components/PageHeader/PageHeader';
 import { formatRp } from '../../utils/format';
 import './Products.css';
 import WholesalePrices from './WholesalePrices';
+import BonusPromotion from './BonusPromotion';
 import { normalizeWholesalePrices } from '../../../shared/pricing';
+import { normalizeBonusPromotion } from '../../../shared/promotions';
 
-const EMPTY_PRODUCT = { id: '', code: '', name: '', category_id: '', unit_id: '', price: '', purchase_price: '', vip_price: '', wholesale_prices: [], stock: '0', variants: [] };
+const EMPTY_PRODUCT = { id: '', code: '', name: '', category_id: '', unit_id: '', price: '', purchase_price: '', vip_price: '', wholesale_prices: [], buy_qty: 0, free_qty: 0, stock: '0', variants: [] };
 const EMPTY_CATEGORY = { id: '', name: '' };
 const EMPTY_UNIT = { id: '', name: '', symbol: '' };
 
@@ -73,6 +75,8 @@ export default function Products() {
             price: product.price ?? '',
             vip_price: product.vip_price ?? '',
             wholesale_prices: product.wholesale_prices || [],
+            buy_qty: product.buy_qty || 0,
+            free_qty: product.free_qty || 0,
             purchase_price: product.cost_known ? product.purchase_price : '',
             stock: product.stock || '0',
             variants: (product.variants || []).map(variant => ({ ...variant, key: `saved-${variant.id}` })),
@@ -89,7 +93,7 @@ export default function Products() {
   const addVariant = () => setProductModal(previous => ({
     ...previous,
     form: { ...previous.form, variants: [...previous.form.variants, {
-      key: crypto.randomUUID(), name: '', sku: '', purchase_price: '', vip_price: '', wholesale_prices: [], price: previous.form.price || '0', stock: '0',
+      key: crypto.randomUUID(), name: '', sku: '', purchase_price: '', vip_price: '', wholesale_prices: [], buy_qty: 0, free_qty: 0, price: previous.form.price || '0', stock: '0',
     }] },
   }));
 
@@ -115,7 +119,8 @@ export default function Products() {
     setProductError('');
     try {
       const wholesalePrices = normalizeWholesalePrices(form.wholesale_prices, form.variants.length ? Infinity : form.price);
-      const variants = form.variants.map(variant => ({ ...variant, wholesale_prices: normalizeWholesalePrices(variant.wholesale_prices, variant.price) }));
+      const promo = normalizeBonusPromotion(form);
+      const variants = form.variants.map(variant => ({ ...variant, ...normalizeBonusPromotion(variant), wholesale_prices: normalizeWholesalePrices(variant.wholesale_prices, variant.price) }));
       let imageName = form.id ? products.find(p => p.id === form.id)?.img || 'default.png' : 'default.png';
       
       if (file) {
@@ -126,6 +131,7 @@ export default function Products() {
       }
 
       const payload = {
+        ...promo,
         code: form.code,
         name: form.name,
         category_id: form.category_id || null,
@@ -137,6 +143,7 @@ export default function Products() {
         stock: parseInt(form.stock),
         img: imageName,
         variants: variants.map(variant => ({
+          buy_qty: variant.buy_qty, free_qty: variant.free_qty,
           wholesale_prices: variant.wholesale_prices,
           purchase_price: variant.purchase_price == null || variant.purchase_price === '' ? null : Number(variant.purchase_price), vip_price: variant.vip_price == null || variant.vip_price === '' ? null : Number(variant.vip_price), id: variant.id, name: variant.name, sku: variant.sku, price: Number(variant.price), stock: Number(variant.stock),
         })),
@@ -396,6 +403,7 @@ export default function Products() {
           {!productModal.form.variants.length && <Input label="Harga VIP (Rp, Opsional)" type="number" min="0" step="0.01" placeholder="Kosongkan untuk memakai harga biasa" value={productModal.form.vip_price} onChange={event => setProductModal({ ...productModal, form: { ...productModal.form, vip_price: event.target.value } })} />}
           <Input label="Harga Modal (Rp, per satuan)" type="number" min="0" step="0.01" placeholder="Isi untuk menghitung laba transaksi berikutnya" value={productModal.form.purchase_price} onChange={event => setProductModal({ ...productModal, form: { ...productModal.form, purchase_price: event.target.value } })} />
           {!productModal.form.variants.length && <WholesalePrices value={productModal.form.wholesale_prices} onChange={wholesale_prices => setProductModal(previous => ({ ...previous, form: { ...previous.form, wholesale_prices } }))} />}
+          {!productModal.form.variants.length && <BonusPromotion value={productModal.form} onChange={promo => setProductModal(previous => ({ ...previous, form: { ...previous.form, ...promo } }))} />}
           <section className="variant-editor">
             <div className="variant-editor-heading">
               <div><strong>Varian Produk</strong><p>Contoh: rasa, ukuran, atau warna. Setiap varian memiliki harga dan stok sendiri.</p></div>
@@ -412,6 +420,7 @@ export default function Products() {
                 <Input label="Stok *" type="number" min="0" step="1" required value={variant.stock} onChange={e => updateVariant(variant.key, 'stock', e.target.value)} />
                 <Button variant="danger" aria-label={`Hapus varian ${index + 1}`} onClick={() => removeVariant(variant.key)}><i className="fas fa-trash"></i></Button>
                 <WholesalePrices value={variant.wholesale_prices} onChange={value => updateVariant(variant.key, 'wholesale_prices', value)} />
+                <BonusPromotion value={variant} onChange={promo => setProductModal(previous => ({ ...previous, form: { ...previous.form, variants: previous.form.variants.map(row => row.key === variant.key ? { ...row, ...promo } : row) } }))} />
               </div>
             ))}
           </section>

@@ -138,6 +138,8 @@ app.whenReady().then(async () => {
         await clickButton('Tambah Tingkat Harga');
         await fill('.wholesale-tier input[step="1"]', 2);
         await fill('.wholesale-tier input[step="0.01"]', 59000);
+        await evaluate(`document.querySelector('.bonus-editor summary').click(); document.querySelector('.bonus-editor input[type="checkbox"]').click()`);
+        await fill('.bonus-editor input[aria-label="Jumlah beli untuk promo"]', 4);
         await clickButton('Tambah Varian');
         await fill('.variant-editor-row:nth-child(3) input', 'Biru / L');
         await fill('.variant-editor-row:nth-child(3) input[type="number"]', 55000);
@@ -152,6 +154,8 @@ app.whenReady().then(async () => {
         await waitFor(`!document.querySelector('#modal-product') && document.body.innerText.includes('Kaos UI')`);
         assert.equal(savedPayload.variants.length, 2);
         assert.deepEqual(savedPayload.variants[0].wholesale_prices, [{ min_qty: 2, price: 59000 }]);
+        assert.equal(savedPayload.variants[0].buy_qty, 4);
+        assert.equal(savedPayload.variants[0].free_qty, 1);
         const [product] = await Product.getAll();
         assert.equal(product.stock, 8);
         assert.equal(product.price, 55000);
@@ -444,10 +448,15 @@ app.whenReady().then(async () => {
         await clickButton('Tambah Tingkat Harga');
         await fill('.wholesale-tier:nth-of-type(2) input', 12);
         await fill('.wholesale-tier:nth-of-type(2) input[step="0.01"]', 8000);
+        await evaluate(`document.querySelector('.bonus-editor summary').click(); document.querySelector('.bonus-editor input[type="checkbox"]').click()`);
+        await fill('.bonus-editor input[aria-label="Jumlah beli untuk promo"]', 4);
         if (process.env.APP_JS_UI_SCREENSHOTS) {
             await evaluate(`document.querySelector('.wholesale-editor').scrollIntoView({block:'center'})`);
             await new Promise(resolve => setTimeout(resolve, 350));
             await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'wholesale-editor.png'), (await window.webContents.capturePage()).toPNG());
+            await evaluate(`document.querySelector('.bonus-editor').scrollIntoView({block:'center'})`);
+            await new Promise(resolve => setTimeout(resolve, 350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'bonus-editor.png'), (await window.webContents.capturePage()).toPNG());
         }
         await clickButton('Simpan Produk');
         await waitFor(`!document.querySelector('#modal-product') && document.body.innerText.includes('Minyak Grosir UI')`);
@@ -463,13 +472,33 @@ app.whenReady().then(async () => {
             if (quantity === 6) assert.ok(await evaluate(`document.querySelector('.cart-unit-price').textContent.includes('9.000')`));
         }
         assert.ok(await evaluate(`document.querySelector('.cart-unit-price').textContent.includes('8.000')`));
+        assert.equal(await evaluate(`document.querySelectorAll('.cart-table-wrapper tbody tr').length`), 2);
+        assert.equal(await evaluate(`document.querySelector('.cart-table-wrapper tbody tr:last-child td:nth-child(2)').textContent`), '3');
         await evaluate(`document.querySelector('.qty-stepper button:first-child').click()`);
         await waitFor(`document.querySelector('.cart-unit-price').textContent.includes('9.000')`);
+        assert.equal(await evaluate(`document.querySelector('.cart-table-wrapper tbody tr:last-child td:nth-child(2)').textContent`), '2');
+        if (process.env.APP_JS_UI_SCREENSHOTS) {
+            await evaluate(`document.querySelector('.cart-panel').scrollIntoView({block:'center'})`);
+            await new Promise(resolve => setTimeout(resolve, 350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'bonus-cart.png'), (await window.webContents.capturePage()).toPNG());
+        }
         await clickButton('Simpan Pesanan (Bayar Nanti)');
         await waitFor(`document.body.innerText.includes('Riwayat Pesanan')`);
         const wholesaleOrder = await db.get('SELECT * FROM orders ORDER BY id DESC LIMIT 1');
         assert.equal(wholesaleOrder.total_amount, 99000);
         assert.equal((await Order.getOrderItems(wholesaleOrder.id))[0].price, 9000);
+        const bonusItem = (await Order.getOrderItems(wholesaleOrder.id)).find(row => row.is_free);
+        assert.equal(bonusItem.qty, 2);
+        assert.equal(bonusItem.subtotal, 0);
+        assert.equal((await Product.getById(wholesaleProduct.id)).stock, 87);
+        await evaluate(`Array.from(document.querySelectorAll('tr')).find(row => row.innerText.includes(${JSON.stringify(wholesaleOrder.invoice_number)})).querySelector('button[title="Detail"]').click()`);
+        await waitFor(`document.body.innerText.includes('Minyak Grosir UI (Gratis)')`);
+        await evaluate(`document.querySelector('.modal-close').click()`);
+        await evaluate(`Array.from(document.querySelectorAll('tr')).find(row => row.innerText.includes(${JSON.stringify(wholesaleOrder.invoice_number)})).querySelector('button[title="Cetak Struk"]').click()`);
+        await waitFor(`!!document.querySelector('#receipt-preview iframe')`);
+        assert.ok(await evaluate(`document.querySelector('#receipt-preview iframe').srcdoc.includes('Minyak Grosir UI (Gratis)')`));
+        await evaluate(`document.querySelector('#receipt-preview .modal-close').click()`);
+        console.log('PASS: buy-4-get-1 promotion repeats, updates bonus quantities, deducts stock and appears in details and receipts');
         console.log('PASS: wholesale editor saves tiers and checkout reprices upward and downward across quantity thresholds');
         await evaluate(`location.hash = '#/settings'`);
         await waitFor(`document.body.innerText.includes('Pulihkan Backup')`);

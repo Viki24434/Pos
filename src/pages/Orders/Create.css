@@ -119,6 +119,7 @@
   padding-top: 15px;
 }
 .cart-unit-price { display: block; color: var(--muted); font-size: 11px; margin-top: 4px; }
+.cart-bonus { color: #15803d; font-size: 12px; font-weight: 600; }
 
 .summary-row {
   display: flex;
