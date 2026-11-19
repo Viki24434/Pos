@@ -12,6 +12,7 @@ import { migrateOrderNotes } from '../config/order-notes-migration.js';
 import { migrateWholesalePrices } from '../config/wholesale-migration.js';
 import { migrateBonusPromotions } from '../config/bonus-migration.js';
 import { migrateIncomingStock } from '../config/incoming-migration.js';
+import { migrateUserAccess } from '../config/access-migration.js';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 
@@ -71,6 +72,8 @@ export async function restoreBackup(filename, safetyDirectory, hooks = {}) {
                 await migrateWholesalePrices(staged);
                 await migrateBonusPromotions(staged);
                 await migrateIncomingStock(staged);
+                await migrateUserAccess(staged);
+                if (!await staged.get("SELECT id FROM users WHERE store_id=1 AND role='Super Admin' AND active=1")) throw new Error('Backup tidak memiliki Super Admin aktif.');
                 await migratePayments(staged);
                 await migratePrintSettings(staged);
                 await staged.exec('COMMIT');

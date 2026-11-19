@@ -22,7 +22,7 @@ async function fetchReceivables(filter) {
 }
 
 export default function Receivables() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const [data, setData] = useState(EMPTY_DATA);
   const [filter, setFilter] = useState(EMPTY_FILTER);
   const [appliedFilter, setAppliedFilter] = useState(EMPTY_FILTER);
@@ -125,7 +125,7 @@ export default function Receivables() {
     </div>
     <div className="card receivable-table" aria-busy={loading}>
       {loading ? <p className="receivable-loading">Memuat piutang...</p> : <Table columns={columns} data={data.rows} emptyText="Tidak ada piutang sesuai filter." renderActions={row => <div className="receivable-actions">
-        <Button variant="success" icon="fas fa-wallet" title="Bayar Piutang" onClick={() => { setModalError(''); setPayment(row); }}>Bayar</Button>
+        {can('sales.pay') && <Button variant="success" icon="fas fa-wallet" title="Bayar Piutang" onClick={() => { setModalError(''); setPayment(row); }}>Bayar</Button>}
         <div><Button variant="secondary" title="Riwayat Piutang" aria-label={`Riwayat ${row.invoice_number}`} onClick={() => openDetail(row)}><i className="fas fa-history" /></Button>
         <Button variant="secondary" title="Atur Jatuh Tempo" aria-label={`Jatuh tempo ${row.invoice_number}`} onClick={() => { setModalError(''); setDue({ ...row, value: row.due_date || '' }); }}><i className="fas fa-calendar-alt" /></Button></div>
       </div>} />}

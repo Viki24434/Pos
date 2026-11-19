@@ -16,10 +16,18 @@ import Finance from './pages/Finance/Finance';
 import Reports from './pages/Reports/Reports';
 import Users from './pages/Users/Users';
 import Settings from './pages/Settings/Settings';
+import { can, homePath } from '../shared/permissions';
 
 function PrivateRoute({ children }) {
-  const { user } = useAuth();
+  const { user, checking } = useAuth();
+  if (checking) return <p>Memuat sesi...</p>;
   return user ? children : <Navigate to="/login" replace />;
+}
+
+function AccessRoute({ permission, children }) {
+  const { user } = useAuth();
+  const allowed = (Array.isArray(permission) ? permission : [permission]).some(key => can(user, key));
+  return allowed ? children : <Navigate to={homePath(user)} replace />;
 }
 
 function AppRoutes() {
@@ -65,17 +73,18 @@ function AppRoutes() {
           </PrivateRoute>
         }
       >
-        <Route index element={<Dashboard />} />
-        <Route path="orders" element={<Orders />} />
-        <Route path="receivables" element={<Receivables />} />
-        <Route path="incoming-stock" element={<IncomingStock />} />
-        <Route path="orders/create" element={<CreateOrder />} />
-        <Route path="products" element={<Products />} />
-        <Route path="customers" element={<Customers />} />
-        <Route path="finance" element={<Finance />} />
-        <Route path="reports" element={<Reports />} />
-        <Route path="users" element={<Users />} />
-        <Route path="settings" element={<Settings />} />
+        <Route index element={<AccessRoute permission="reports.view"><Dashboard /></AccessRoute>} />
+        <Route path="orders" element={<AccessRoute permission="sales.view"><Orders /></AccessRoute>} />
+        <Route path="receivables" element={<AccessRoute permission="receivables.manage"><Receivables /></AccessRoute>} />
+        <Route path="incoming-stock" element={<AccessRoute permission="stock.manage"><IncomingStock /></AccessRoute>} />
+        <Route path="orders/create" element={<AccessRoute permission="sales.create"><CreateOrder /></AccessRoute>} />
+        <Route path="products" element={<AccessRoute permission="products.manage"><Products /></AccessRoute>} />
+        <Route path="customers" element={<AccessRoute permission="customers.manage"><Customers /></AccessRoute>} />
+        <Route path="finance" element={<AccessRoute permission="finance.view"><Finance /></AccessRoute>} />
+        <Route path="reports" element={<AccessRoute permission="reports.view"><Reports /></AccessRoute>} />
+        <Route path="users" element={<AccessRoute permission="users.manage"><Users /></AccessRoute>} />
+        <Route path="settings" element={<AccessRoute permission={['settings.manage','backup.manage']}><Settings /></AccessRoute>} />
+        <Route path="no-access" element={<p>Akun ini belum memiliki hak akses. Hubungi Super Admin.</p>} />
       </Route>
     </Routes>
   );

@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain, Menu, protocol, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain: rawIpcMain, Menu, protocol, dialog } = require('electron');
+const { ipcMain } = require('./access-control.cjs').createAccessControl(rawIpcMain);
 require('./backup.cjs').registerBackupHandlers(ipcMain, { app, BrowserWindow, dialog });
 const path = require('path');
 const fs = require('fs');
@@ -6,7 +7,7 @@ const { inisialisasiDatabase, getDbConnection } = require('../config/db');
 const os = require('os');
 const crypto = require('crypto');
 const sharp = require('sharp');
-const bcrypt = require('bcrypt');
+
 
 function getDeviceID() {
     const interfaces = os.networkInterfaces();
@@ -62,7 +63,7 @@ const Report = require('../models/Report');
 const Category = require('../models/Category');
 const Unit = require('../models/Unit');
 const { registerCustomerHandlers } = require('./customer-handlers.cjs');
-const User = require('../models/User');
+
 const Finance = require('../models/Finance');
 
 ipcMain.handle('get-dashboard-data', async () => {
@@ -127,46 +128,6 @@ ipcMain.handle('store-expenditure', async (event, data) => {
     try { await Finance.storeExpenditure(data); return true; } catch (e) { return false; }
 });
 registerCustomerHandlers(ipcMain);
-ipcMain.handle('get-users', async () => await User.getAll());
-
-ipcMain.handle('auth-login', async (event, credentials) => {
-    try {
-        const db = await getDbConnection();
-        const user = await db.get("SELECT * FROM users WHERE username = ?", [credentials.username]);
-        
-        if (!user) {
-            return { success: false, message: 'Username tidak ditemukan!' };
-        }
-
-        let isMatch = false;
-        let dbPassword = user.password;
-
-        if (dbPassword.startsWith('$2y$')) {
-            dbPassword = dbPassword.replace('$2y$', '$2a$');
-        }
-
-        if (dbPassword.startsWith('$2b$') || dbPassword.startsWith('$2a$')) {
-            isMatch = await bcrypt.compare(credentials.password, dbPassword);
-        } else {
-            isMatch = (credentials.password === user.password);
-        }
-
-        if (isMatch) {
-            return { success: true, user: { id: user.id, name: user.name, role: user.role } };
-        } else {
-            return { success: false, message: 'Password salah!' };
-        }
-    } catch (e) {
-        if (credentials.username === 'admin' && credentials.password === 'admin') {
-            return { success: true, user: { name: 'Admin Darurat', role: 'Super Admin' } };
-        }
-        return { success: false, message: 'Gagal terhubung ke database.' };
-    }
-});
-
-ipcMain.handle('auth-logout', async () => {return true});
-ipcMain.handle('check-auth', async () => {return null});
-
 ipcMain.handle('get-settings', async () => {
     try {
         const db = await getDbConnection();

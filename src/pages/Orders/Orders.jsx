@@ -15,7 +15,7 @@ import './Orders.css';
 
 export default function Orders() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const [paying, setPaying] = useState(false);
   const [paymentError, setPaymentError] = useState('');
   const [orders, setOrders] = useState([]);
@@ -102,7 +102,7 @@ export default function Orders() {
   const orderColumns = [
     { key: 'invoice_number', label: 'No. Invoice', cellStyle: { fontWeight: 700, color: 'var(--primary)' } },
     { key: 'payment_action', label: 'Pembayaran', render: order => Math.round((order.total_amount - (order.total_paid || 0)) * 100) > 0
-      ? <Button variant="success" icon="fas fa-wallet" title="Bayar" disabled={paying} onClick={() => openPayment(order)}>Bayar</Button>
+      ? can('sales.pay') && <Button variant="success" icon="fas fa-wallet" title="Bayar" disabled={paying} onClick={() => openPayment(order)}>Bayar</Button>
       : <StatusBadge status="Lunas" /> },
     { key: 'customer_name', label: 'Pelanggan', render: (o) => <div><b>{o.customer_name}</b>{o.customer_status && <div style={{ marginTop: 4 }}><StatusBadge status={o.customer_status} /></div>}</div> },
     { key: 'total_amount', label: 'Total Tagihan', render: (o) => formatRp(o.total_amount) },
@@ -126,7 +126,7 @@ export default function Orders() {
       <PageHeader
         title="Riwayat Pesanan"
         subtitle="Daftar seluruh transaksi dan status pembayaran"
-        actionLabel="Buat Pesanan Baru"
+        actionLabel={can('sales.create') ? 'Buat Pesanan Baru' : undefined}
         actionIcon="fas fa-plus"
         onAction={() => navigate('/orders/create')}
       />

@@ -1,11 +1,12 @@
 // Run with: npx electron tests/ui-smoke.cjs
 // Uses a hidden, isolated Electron window and an in-memory database.
-const { app, BrowserWindow, ipcMain, session } = require('electron');
+const { app, BrowserWindow, ipcMain: rawIpcMain, session } = require('electron');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs/promises');
 process.env.APP_JS_DB_PATH = ':memory:';
+const { ipcMain } = require('../electron/access-control.cjs').createAccessControl(rawIpcMain);
 const { getDbConnection, inisialisasiDatabase } = require('../config/db.js');
 const Product = require('../models/Product.js');
 const Order = require('../models/Order.js');
@@ -80,6 +81,7 @@ app.whenReady().then(async () => {
         ipcMain.handle('check-activation', () => true);
         ipcMain.handle('get-settings', () => ({ name: 'Test' }));
         ipcMain.handle('get-ip-address', () => '127.0.0.1');
+        ipcMain.handle('get-dashboard-data', () => ({ omzet:0, laba:0, transaksi:0, piutang:0, lowStocks:[], recentOrders:[], topProducts:[], chartLabels:[], chartData:[] }));
         ipcMain.handle('get-products', () => Product.getAll());
         ipcMain.handle('get-categories', () => []);
         ipcMain.handle('get-units', () => []);
@@ -124,7 +126,7 @@ app.whenReady().then(async () => {
         });
         window.webContents.getPrintersAsync = async () => [{ name: 'THERMAL-TEST', displayName: 'Thermal Test' }];
         await window.loadURL(`${server.resolvedUrls.local[0]}?ui-session=1#/products`);
-        await evaluate(`localStorage.setItem('pos_session', JSON.stringify({ id: 1, name: 'Test', role: 'Super Admin' })); true;`);
+        assert.equal((await evaluate(`window.api.login({username:'admin',password:'admin'})`)).success, true);
         await window.loadURL(`${server.resolvedUrls.local[0]}?ui-session=2#/products`);
         await waitFor(`document.body.innerText.includes('Manajemen Produk')`);
         await clickButton('Tambah Produk');
@@ -464,6 +466,8 @@ app.whenReady().then(async () => {
             preload: path.resolve(__dirname, 'fixtures/legacy-preload.cjs'), session: isolatedSession, backgroundThrottling: false, offscreen: true,
         } });
         await window.loadURL(`${server.resolvedUrls.local[0]}?legacy-api=1#/orders/create`);
+        assert.equal((await evaluate(`window.api.login({username:'admin',password:'admin'})`)).success, true);
+        await window.loadURL(`${server.resolvedUrls.local[0]}?legacy-api=2#/orders/create`);
         await waitFor(`document.querySelectorAll('.product-tile').length === 1`);
         await evaluate(`document.querySelector('.product-tile').click()`);
         await waitFor(`document.querySelectorAll('.variant-option').length === 2`);
@@ -601,6 +605,67 @@ app.whenReady().then(async () => {
         await waitFor(`document.querySelector('.incoming-history')?.innerText.includes('Supplier UI')`);
         assert.equal((await db.get('SELECT supplier_name FROM stock_receipts ORDER BY id DESC LIMIT 1')).supplier_name, 'Supplier UI');
         console.log('PASS: inline supplier creation, mixed incoming stock, costs, receipt detail, supplier edit and immutable supplier snapshot through real IPC');
+
+        await evaluate(`document.querySelector('a[href="#/users"]').click()`);
+        await waitFor(`document.body.innerText.includes('Pengaturan User') && !!document.querySelector('button[title="Edit Hak Akses"]')`);
+        await clickButton('Tambah Akun');
+        await waitFor(`!!document.querySelector('#user-name')`);
+        await fill('#user-name', 'Kasir UI');
+        await fill('#user-username', 'kasir-ui');
+        await fill('#user-password', 'kasir123');
+        assert.equal(await evaluate(`document.querySelector('[data-permission="sales.discount"]').checked`), false);
+        assert.equal(await evaluate(`document.querySelector('[data-permission="reports.view"]').checked`), false);
+        if (process.env.APP_JS_UI_SCREENSHOTS) {
+            await new Promise(resolve => setTimeout(resolve,350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS,'user-permissions.png'),(await window.webContents.capturePage()).toPNG());
+        }
+        await clickButton('Simpan Akun');
+        await waitFor(`!document.querySelector('#modal-user') && document.body.innerText.includes('Kasir UI')`);
+        const cashierAccount = await db.get("SELECT id FROM users WHERE username='kasir-ui'");
+        assert.ok(cashierAccount.id > 1);
+        await evaluate(`Array.from(document.querySelectorAll('.users-page tbody tr')).find(row=>row.innerText.includes('(Anda)')).querySelector('button').click()`);
+        await waitFor(`!!document.querySelector('#user-active')`);
+        await evaluate(`document.querySelector('#user-active').click()`);
+        await clickButton('Simpan Akun');
+        await waitFor(`document.querySelector('#modal-user')?.innerText.includes('Minimal satu Super Admin')`);
+        await evaluate(`document.querySelector('#modal-user .modal-close').click()`);
+        await evaluate(`document.querySelector('.sidebar-logout a').click()`);
+        await waitFor(`document.body.innerText.includes('Masuk Sekarang')`);
+        await fill('input[placeholder="Masukkan username"]','kasir-ui');
+        await fill('input[placeholder="Masukkan password"]','kasir123');
+        await clickButton('Masuk Sekarang');
+        await waitFor(`location.hash === '#/orders/create' && document.querySelectorAll('.product-tile').length === 2`);
+        for (const target of ['users','reports','products','finance','settings','incoming-stock']) assert.equal(await evaluate(`!!document.querySelector('a[href="#/${target}"]')`),false);
+        assert.equal(await evaluate(`!!document.querySelector('.discount-input')`),false);
+        const cashierProducts=await evaluate(`window.api.getProducts()`);
+        assert.equal('purchase_price' in cashierProducts[0],false);
+        const rejected=await evaluate(`window.api.getUsers().then(()=>false,error=>error.message)`);
+        assert.match(rejected,/hak akses/);
+        await evaluate(`localStorage.setItem('pos_session',JSON.stringify({id:1,role:'Super Admin'}));location.hash='#/reports'`);
+        await waitFor(`location.hash === '#/orders/create'`);
+        await evaluate(`location.reload()`);
+        await waitFor(`location.hash === '#/orders/create' && document.querySelectorAll('.product-tile').length === 2`);
+        assert.equal(await evaluate(`!!document.querySelector('a[href="#/users"]')`),false);
+        if (process.env.APP_JS_UI_SCREENSHOTS) {
+            await new Promise(resolve => setTimeout(resolve,350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS,'cashier-access.png'),(await window.webContents.capturePage()).toPNG());
+        }
+        await evaluate(`window.alert=()=>{};Array.from(document.querySelectorAll('.product-tile')).find(tile=>tile.innerText.includes('Minyak Grosir UI')).click()`);
+        await waitFor(`document.querySelectorAll('.qty-stepper').length===1`);
+        await clickButton('Bayar Sekarang');
+        await waitFor(`!!document.querySelector('#checkout-payment #payment-method option[value="Cash"]')`);
+        await clickButton('Simpan Pesanan & Pembayaran');
+        await waitFor(`document.body.innerText.includes('Riwayat Pesanan')`);
+        const cashierOrder=await db.get('SELECT * FROM orders ORDER BY id DESC LIMIT 1');
+        assert.equal(cashierOrder.user_id,cashierAccount.id);
+        assert.equal((await db.get('SELECT user_id FROM payments WHERE order_id=?',[cashierOrder.id])).user_id,cashierAccount.id);
+        await evaluate(`document.querySelector('.sidebar-logout a').click()`);
+        await waitFor(`document.body.innerText.includes('Masuk Sekarang')`);
+        await fill('input[placeholder="Masukkan username"]','admin');
+        await fill('input[placeholder="Masukkan password"]','admin');
+        await clickButton('Masuk Sekarang');
+        await waitFor(`!!document.querySelector('a[href="#/settings"]')`);
+        console.log('PASS: user account form, protected final owner, real cashier login, hidden restricted menus, denied IPC, forged storage rejection, and attributed checkout');
         await evaluate(`location.hash = '#/settings'`);
         await waitFor(`document.body.innerText.includes('Pulihkan Backup')`);
         await clickButton('Pulihkan Backup');

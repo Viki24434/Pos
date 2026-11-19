@@ -1,226 +1,90 @@
 import { useEffect, useState } from 'react';
 import PageHeader from '../../components/PageHeader/PageHeader';
-import Card from '../../components/Card/Card';
 import Table from '../../components/Table/Table';
 import Button from '../../components/Button/Button';
-import IconButton from '../../components/IconButton/IconButton';
 import Input from '../../components/Input/Input';
 import Select from '../../components/Select/Select';
 import Alert from '../../components/Alert/Alert';
 import Modal from '../../components/Modal/Modal';
 import StatusBadge from '../../components/StatusBadge/StatusBadge';
-import RowActions from '../../components/RowActions/RowActions';
+import { useAuth } from '../../context/AuthContext';
+import { PERMISSIONS, ROLES, defaultPermissions } from '../../../shared/permissions';
+import './Users.css';
 
 export default function Users() {
+  const { user: currentUser, refresh } = useAuth();
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
-
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [userId, setUserId] = useState('');
-  const [name, setName] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [role, setRole] = useState('Kasir');
-
-  const loadData = async () => {
-    try {
-      const res = await window.api.getUsers();
-      setUsers(res || []);
-    } catch (e) {
-      setError('Gagal memuat data pengguna.');
-    }
-  };
-
+  const [notice, setNotice] = useState('');
+  const [form, setForm] = useState(null);
+  const [formError, setFormError] = useState('');
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
-    loadData();
+    let active = true;
+    window.api.getUsers().then(rows => { if (active) setUsers(rows); }).catch(() => { if (active) setError('Gagal memuat pengguna.'); });
+    return () => { active = false; };
   }, []);
-
-  const handleOpenModal = (user = null) => {
-    if (user) {
-      setUserId(user.id);
-      setName(user.name || user.nama || '');
-      setUsername(user.username || '');
-      setPassword('');
-      setRole(user.role || 'Kasir');
+  const open = (row = {}) => {
+    setFormError('');
+    setForm({ id: row.id, name: row.name || '', username: row.username || '', password: '', role: row.role || 'Kasir', active: row.active ?? 1, permissions: row.permissions || defaultPermissions('Kasir') });
+  };
+  const toggle = (key, checked) => {
+    const selected = new Set(form.permissions);
+    if (checked) {
+      selected.add(key);
+      if (['reports.view','stock.manage'].includes(key)) selected.add('cost.view');
+      if (key === 'finance.manage') selected.add('finance.view');
     } else {
-      setUserId('');
-      setName('');
-      setUsername('');
-      setPassword('');
-      setRole('Kasir');
+      selected.delete(key);
+      if (key === 'cost.view') { selected.delete('reports.view'); selected.delete('stock.manage'); }
+      if (key === 'finance.view') selected.delete('finance.manage');
     }
-    setIsModalOpen(true);
+    setForm({ ...form, permissions: [...selected] });
   };
-
-  const handleSave = async (e) => {
-    e.preventDefault();
+  const save = async event => {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setFormError('');
     try {
-      const payload = { name, username, role };
-      if (password) payload.password = password;
-
-      if (userId) {
-        if (window.api.updateUser) {
-          await window.api.updateUser(userId, payload);
-        } else {
-          alert('Fungsi update user belum tersedia di API.');
-        }
-      } else {
-        if (window.api.createUser) {
-          await window.api.createUser(payload);
-        } else {
-          alert('Fungsi create user belum tersedia di API.');
-        }
-      }
-
-      setIsModalOpen(false);
-      loadData();
-    } catch (err) {
-      setError('Gagal menyimpan data pengguna.');
-    }
+      if (!window.api.saveUser) throw new Error('Buka ulang aplikasi untuk memuat pengaturan hak akses.');
+      const result = await window.api.saveUser(form);
+      if (!result?.success) throw new Error(result?.message || 'Gagal menyimpan akun.');
+      setForm(null);
+      setNotice('Akun dan hak akses tersimpan.');
+      if (form.id === currentUser.id) { const updated = await refresh(); if (updated?.role === 'Super Admin') setUsers(await window.api.getUsers()); }
+      else setUsers(await window.api.getUsers());
+    } catch (failure) { setFormError(failure.message || 'Gagal menyimpan akun.'); }
+    finally { setBusy(false); }
   };
-
-  const handleDelete = async (id) => {
-    if (confirm('Yakin ingin menghapus akun ini?')) {
-      try {
-        if (window.api.deleteUser) {
-          await window.api.deleteUser(id);
-          loadData();
-        } else {
-          alert('Fungsi delete user belum tersedia di API.');
-        }
-      } catch (err) {
-        setError('Gagal menghapus pengguna.');
-      }
-    }
-  };
-
-  const filteredUsers = users.filter(
-    (u) =>
-      (u.name || u.nama || '').toLowerCase().includes(search.toLowerCase()) ||
-      (u.username || '').toLowerCase().includes(search.toLowerCase())
-  );
-
-  const tableColumns = [
-    {
-      key: 'name',
-      label: 'Nama Lengkap',
-      render: (row) => <b>{row.name || row.nama}</b>
-    },
-    {
-      key: 'username',
-      label: 'Username',
-      render: (row) => row.username
-    },
-    {
-      key: 'role',
-      label: 'Role / Hak Akses',
-      headerStyle: { textAlign: 'center' },
-      cellStyle: { textAlign: 'center' },
-      render: (row) => (
-        <StatusBadge variant={row.role === 'Admin' ? 'warning' : 'success'}>
-          {row.role}
-        </StatusBadge>
-      )
-    }
-  ];
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <Alert>{error}</Alert>
-
-      <PageHeader 
-        title="Pengaturan User" 
-        icon="fas fa-users-cog" 
-        actionLabel="Tambah Akun"
-        actionIcon="fas fa-plus"
-        onAction={() => handleOpenModal()}
-      />
-
-      <Card>
-        <div style={{ marginBottom: '15px', maxWidth: '300px' }}>
-          <Input
-            placeholder="Cari nama atau username..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-
-        <Table
-          columns={tableColumns}
-          data={filteredUsers}
-          emptyText="Tidak ada data pengguna."
-          keyField="id"
-          renderActions={(row) => (
-            <RowActions>
-              <IconButton
-                icon="fas fa-edit"
-                variant="primary"
-                onClick={() => handleOpenModal(row)}
-              />
-              <IconButton
-                icon="fas fa-trash"
-                variant="danger"
-                onClick={() => handleDelete(row.id)}
-              />
-            </RowActions>
-          )}
-        />
-      </Card>
-
-      <Modal
-        isOpen={isModalOpen}
-        id="modal-user"
-        title={userId ? 'Edit Akun User' : 'Tambah Akun User'}
-        icon="fas fa-user-cog"
-        onClose={() => setIsModalOpen(false)}
-      >
-        <form onSubmit={handleSave}>
-          <div style={{ marginBottom: '12px' }}>
-            <Input
-              label="Nama Lengkap *"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </div>
-
-          <div style={{ marginBottom: '12px' }}>
-            <Input
-              label="Username *"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              required
-            />
-          </div>
-
-          <div style={{ marginBottom: '12px' }}>
-            <Input
-              label={userId ? 'Password (Kosongkan jika tidak diubah)' : 'Password *'}
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required={!userId}
-            />
-          </div>
-
-          <div style={{ marginBottom: '20px' }}>
-            <Select label="Role / Hak Akses" value={role} onChange={(e) => setRole(e.target.value)}>
-              <option value="Admin">Admin</option>
-              <option value="Kasir">Kasir</option>
-            </Select>
-          </div>
-
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <Button type="submit" variant="success" fullWidth style={{ justifyContent: 'center' }}>
-              Simpan
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => setIsModalOpen(false)}>
-              Batal
-            </Button>
-          </div>
-        </form>
-      </Modal>
+  return <div className="users-page">
+    <PageHeader title="Pengaturan User" subtitle="Akun, peran, dan hak akses" icon="fas fa-users-cog" actionLabel="Tambah Akun" actionIcon="fas fa-plus" onAction={() => open()} />
+    <Alert>{error}</Alert><Alert variant="success">{notice}</Alert>
+    <div className="card"><Input placeholder="Cari nama atau username..." value={search} onChange={event => setSearch(event.target.value)} />
+      <Table columns={[
+        { key: 'name', label: 'Nama', render: row => <strong>{row.name}{row.id === currentUser.id ? ' (Anda)' : ''}</strong> },
+        { key: 'username', label: 'Username' },
+        { key: 'role', label: 'Peran', render: row => <StatusBadge status={row.role} /> },
+        { key: 'active', label: 'Status', render: row => row.active ? 'Aktif' : 'Nonaktif' },
+        { key: 'permissions', label: 'Hak Akses', render: row => row.role === 'Super Admin' ? 'Akses penuh' : `${row.permissions.length} izin` },
+      ]} data={users.filter(row => `${row.name} ${row.username}`.toLowerCase().includes(search.toLowerCase()))} renderActions={row => <Button variant="secondary" title="Edit Hak Akses" onClick={() => open(row)}>Edit</Button>} emptyText="Tidak ada pengguna." />
     </div>
-  );
+    <Modal id="modal-user" isOpen={!!form} title={form?.id ? 'Edit Akun & Hak Akses' : 'Tambah Akun'} maxWidth={780} onClose={() => { if (!busy) setForm(null); }}>
+      {form && <form onSubmit={save}>
+        <Alert>{formError}</Alert>
+        <div className="user-fields">
+          <Input id="user-name" label="Nama Lengkap *" required value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} />
+          <Input id="user-username" label="Username *" autoComplete="off" required value={form.username} onChange={event => setForm({ ...form, username: event.target.value })} />
+          <Input id="user-password" label={form.id ? 'Password baru (Opsional)' : 'Password *'} type="password" autoComplete="new-password" minLength={6} required={!form.id} value={form.password} onChange={event => setForm({ ...form, password: event.target.value })} />
+          <Select id="user-role" label="Peran" value={form.role} onChange={event => setForm({ ...form, role: event.target.value, permissions: defaultPermissions(event.target.value) })}>{ROLES.map(role => <option key={role}>{role}</option>)}</Select>
+        </div>
+        <label className="user-active"><input id="user-active" type="checkbox" checked={!!form.active} onChange={event => setForm({ ...form, active: event.target.checked ? 1 : 0 })} /> Akun aktif</label>
+        <section className="user-permissions"><div className="user-permissions-heading"><strong>Hak Akses</strong><Button variant="secondary" disabled={busy || form.role === 'Super Admin'} onClick={() => setForm({ ...form, permissions: defaultPermissions(form.role) })}>Reset Sesuai Peran</Button></div>
+          {form.role === 'Super Admin' ? <p>Super Admin memiliki akses penuh.</p> : <div className="user-permission-grid">{PERMISSIONS.filter(item => !item.ownerOnly).map(item => <label key={item.key}><input type="checkbox" data-permission={item.key} checked={form.permissions.includes(item.key)} onChange={event => toggle(item.key, event.target.checked)} />{item.label}</label>)}</div>}
+        </section>
+        <Button type="submit" variant="success" fullWidth disabled={busy}>{busy ? 'Menyimpan...' : 'Simpan Akun'}</Button>
+      </form>}
+    </Modal>
+  </div>;
 }

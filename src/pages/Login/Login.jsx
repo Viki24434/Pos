@@ -12,21 +12,25 @@ export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (busy) return;
     setError('');
-
+    setBusy(true);
+    try {
     const response = await window.api.login({ username, password });
-
     if (response.success) {
       login(response.user);
       navigate('/');
     } else {
       setError(response.message);
     }
+    } catch { setError('Gagal login. Silakan coba lagi.'); }
+    finally { setBusy(false); }
   };
 
   return (
@@ -58,8 +62,8 @@ export default function Login() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
-          <Button type="submit" fullWidth icon="fas fa-sign-in-alt">
-            Masuk Sekarang
+          <Button type="submit" fullWidth icon="fas fa-sign-in-alt" disabled={busy}>
+            {busy ? 'Memeriksa...' : 'Masuk Sekarang'}
           </Button>
         </form>
       </Card>

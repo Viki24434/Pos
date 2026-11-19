@@ -11,7 +11,7 @@ import { formatRp } from '../../utils/format';
 import './Dashboard.css';
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [now, setNow] = useState(new Date());
@@ -183,9 +183,9 @@ export default function Dashboard() {
               <i className="fas fa-exchange-alt" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '6px', borderRadius: '6px' }}></i>
               Aktivitas Terakhir
             </h3>
-            <Button variant="info" onClick={() => navigate('/orders')} style={{ padding: '6px 12px', fontSize: 11 }}>
+            {can('sales.view') && <Button variant="info" onClick={() => navigate('/orders')} style={{ padding: '6px 12px', fontSize: 11 }}>
               Lihat Semua
-            </Button>
+            </Button>}
           </div>
           <Table 
             columns={recentOrdersColumns} 

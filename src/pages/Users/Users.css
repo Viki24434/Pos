@@ -1,0 +1,10 @@
+.users-page { display: flex; flex-direction: column; gap: 20px; }
+.user-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; text-align: left; }
+.user-fields .input-group { margin: 0; }
+.user-active { display: flex; align-items: center; gap: 8px; margin: 16px 0; font-size: 13px; cursor: pointer; }
+.user-permissions { padding: 16px; border: 1px solid var(--border-color); border-radius: 12px; margin-bottom: 18px; text-align: left; background: var(--table-head); }
+.user-permissions-heading { display: flex; gap: 12px; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.user-permission-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
+.user-permission-grid label { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; cursor: pointer; }
+.user-permission-grid input { margin: 2px 0 0; }
+@media(max-width:600px) { .user-fields, .user-permission-grid { grid-template-columns: 1fr; } .user-permissions-heading { align-items: flex-start; flex-direction: column; } }

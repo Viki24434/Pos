@@ -7,6 +7,7 @@ import Input from '../../components/Input/Input';
 import Select from '../../components/Select/Select';
 import Modal from '../../components/Modal/Modal';
 import Alert from '../../components/Alert/Alert';
+import { useAuth } from '../../context/AuthContext';
 
 const formatRp = (v) =>
   new Intl.NumberFormat('id-ID', {
@@ -16,6 +17,7 @@ const formatRp = (v) =>
   }).format(v || 0);
 
 export default function Finance() {
+  const { can } = useAuth();
   const [summary, setSummary] = useState(null);
   const showOtherMethods = !!summary?.hasOtherMethods;
   const [startDate, setStartDate] = useState('');
@@ -126,12 +128,12 @@ export default function Finance() {
 
       <PageHeader title="Arus Kas & Buku Keuangan" icon="fas fa-wallet">
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <Button variant="info" icon="fas fa-hand-holding-usd" onClick={() => openModal('Income')}>
+          {can('finance.manage') && <Button variant="info" icon="fas fa-hand-holding-usd" onClick={() => openModal('Income')}>
             Pemasukan
-          </Button>
-          <Button variant="danger" icon="fas fa-file-invoice-dollar" onClick={() => openModal('Expenditure')}>
+          </Button>}
+          {can('finance.manage') && <Button variant="danger" icon="fas fa-file-invoice-dollar" onClick={() => openModal('Expenditure')}>
             Pengeluaran
-          </Button>
+          </Button>}
           <Button variant="success" icon="fas fa-sync-alt" onClick={loadData}>
             Refresh
           </Button>

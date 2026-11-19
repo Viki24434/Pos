@@ -6,8 +6,10 @@ import PrintSettings from '../../components/PrintSettings';
 import BackupSettings from '../../components/BackupSettings';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import './Settings.css';
+import { useAuth } from '../../context/AuthContext';
 
 export default function Settings() {
+  const { can } = useAuth();
   const [storeName, setStoreName] = useState('');
   const [storePhone, setStorePhone] = useState('');
   const [storeAddress, setStoreAddress] = useState('');
@@ -60,7 +62,7 @@ export default function Settings() {
       <PageHeader title="Pengaturan Toko" icon="fas fa-cogs" />
 
       <div className="settings-grid">
-      <div className="card settings-card settings-store-card">
+      {can('settings.manage') && <><div className="card settings-card settings-store-card">
         <h3>Informasi Toko</h3>
         <form onSubmit={handleSubmit}>
           <div className="input-group">
@@ -119,7 +121,8 @@ export default function Settings() {
       </div>
       <PrintSettings />
       <PaymentMethods />
-      <BackupSettings />
+      </>}
+      {can('backup.manage') && <BackupSettings />}
       </div>
     </div>
   );

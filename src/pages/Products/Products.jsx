@@ -13,12 +13,14 @@ import WholesalePrices from './WholesalePrices';
 import BonusPromotion from './BonusPromotion';
 import { normalizeWholesalePrices } from '../../../shared/pricing';
 import { normalizeBonusPromotion } from '../../../shared/promotions';
+import { useAuth } from '../../context/AuthContext';
 
 const EMPTY_PRODUCT = { id: '', code: '', name: '', category_id: '', unit_id: '', price: '', purchase_price: '', vip_price: '', wholesale_prices: [], buy_qty: 0, free_qty: 0, stock: '0', variants: [] };
 const EMPTY_CATEGORY = { id: '', name: '' };
 const EMPTY_UNIT = { id: '', name: '', symbol: '' };
 
 export default function Products() {
+  const { can } = useAuth();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [units, setUnits] = useState([]);
@@ -401,7 +403,7 @@ export default function Products() {
           </div>
 
           {!productModal.form.variants.length && <Input label="Harga VIP (Rp, Opsional)" type="number" min="0" step="0.01" placeholder="Kosongkan untuk memakai harga biasa" value={productModal.form.vip_price} onChange={event => setProductModal({ ...productModal, form: { ...productModal.form, vip_price: event.target.value } })} />}
-          <Input label="Harga Modal (Rp, per satuan)" type="number" min="0" step="0.01" placeholder="Isi untuk menghitung laba transaksi berikutnya" value={productModal.form.purchase_price} onChange={event => setProductModal({ ...productModal, form: { ...productModal.form, purchase_price: event.target.value } })} />
+          {can('cost.view') && <Input label="Harga Modal (Rp, per satuan)" type="number" min="0" step="0.01" placeholder="Isi untuk menghitung laba transaksi berikutnya" value={productModal.form.purchase_price} onChange={event => setProductModal({ ...productModal, form: { ...productModal.form, purchase_price: event.target.value } })} />}
           {!productModal.form.variants.length && <WholesalePrices value={productModal.form.wholesale_prices} onChange={wholesale_prices => setProductModal(previous => ({ ...previous, form: { ...previous.form, wholesale_prices } }))} />}
           {!productModal.form.variants.length && <BonusPromotion value={productModal.form} onChange={promo => setProductModal(previous => ({ ...previous, form: { ...previous.form, ...promo } }))} />}
           <section className="variant-editor">
@@ -416,7 +418,7 @@ export default function Products() {
                 <Input label="SKU (Opsional)" value={variant.sku} onChange={e => updateVariant(variant.key, 'sku', e.target.value)} />
                 <Input label="Harga (Rp) *" type="number" min="0" step="0.01" required value={variant.price} onChange={e => updateVariant(variant.key, 'price', e.target.value)} />
                 <Input label="Harga VIP (Opsional)" type="number" min="0" step="0.01" placeholder="Harga biasa" value={variant.vip_price ?? ''} onChange={event => updateVariant(variant.key, 'vip_price', event.target.value)} />
-                <Input label="Modal Varian (Opsional)" type="number" min="0" step="0.01" placeholder="Modal produk" value={variant.purchase_price ?? ''} onChange={event => updateVariant(variant.key, 'purchase_price', event.target.value)} />
+                {can('cost.view') && <Input label="Modal Varian (Opsional)" type="number" min="0" step="0.01" placeholder="Modal produk" value={variant.purchase_price ?? ''} onChange={event => updateVariant(variant.key, 'purchase_price', event.target.value)} />}
                 <Input label="Stok *" type="number" min="0" step="1" required value={variant.stock} onChange={e => updateVariant(variant.key, 'stock', e.target.value)} />
                 <Button variant="danger" aria-label={`Hapus varian ${index + 1}`} onClick={() => removeVariant(variant.key)}><i className="fas fa-trash"></i></Button>
                 <WholesalePrices value={variant.wholesale_prices} onChange={value => updateVariant(variant.key, 'wholesale_prices', value)} />

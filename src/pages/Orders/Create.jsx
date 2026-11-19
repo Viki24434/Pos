@@ -19,7 +19,7 @@ const ITEMS_PER_PAGE = 12; // Jumlah produk per halaman
 
 export default function CreateOrder() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   
@@ -396,7 +396,7 @@ export default function CreateOrder() {
             <div className="summary-row">
               <span>Subtotal</span><strong>{formatRp(subtotal)}</strong>
             </div>
-            <div className="summary-row">
+            {can('sales.discount') && <div className="summary-row">
               <span>Diskon (Rp)</span>
               <input
                 type="number"
@@ -405,15 +405,15 @@ export default function CreateOrder() {
                 onChange={(e) => setDiscount(e.target.value)}
                 min="0"
               />
-            </div>
+            </div>}
             <div className="summary-row summary-total">
               <strong>TOTAL</strong><strong>{formatRp(grandTotal)}</strong>
             </div>
           </div>
 
-          <Button variant="success" fullWidth icon="fas fa-check-circle" disabled={processing} onClick={handleProcessOrder} className="process-order-btn">
+          {can('sales.pay') && <Button variant="success" fullWidth icon="fas fa-check-circle" disabled={processing} onClick={handleProcessOrder} className="process-order-btn">
             {processing ? 'Menyimpan...' : 'Bayar Sekarang'}
-          </Button>
+          </Button>}
           <Button variant="secondary" fullWidth disabled={processing} style={{ marginTop: 10 }} onClick={() => { if (validateCart()) submitOrder({ amount: 0, method: '', payments: [] }); }}>
             Simpan Pesanan (Bayar Nanti)
           </Button>

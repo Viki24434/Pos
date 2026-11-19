@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // ===== Users =====
   getUsers: () => ipcRenderer.invoke('get-users'),
+  saveUser: (data) => ipcRenderer.invoke('save-user', data),
 
   // ===== Orders / POS =====
   getOrders: (filters) => ipcRenderer.invoke('get-orders', filters),

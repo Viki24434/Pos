@@ -1,5 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import './Sidebar.css';
+import { useAuth } from '../../context/AuthContext';
+const MENU_ACCESS = { '/': 'reports.view', '/orders': 'sales.view', '/incoming-stock': 'stock.manage', '/products': 'products.manage', '/customers': 'customers.manage', '/finance': 'finance.view', '/receivables': 'receivables.manage', '/reports': 'reports.view', '/users': 'users.manage', '/settings': 'settings.manage' };
 
 const NAV_GROUPS = [
   {
@@ -30,6 +32,8 @@ const NAV_GROUPS = [
 ];
 
 export default function Sidebar({ onLogout }) {
+  const { can } = useAuth();
+  const visibleGroups = NAV_GROUPS.map(group => ({ ...group, items: group.items.filter(item => can(MENU_ACCESS[item.to]) || (item.to === '/settings' && can('backup.manage'))) })).filter(group => group.items.length);
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
@@ -41,7 +45,7 @@ export default function Sidebar({ onLogout }) {
       </div>
 
       <nav>
-        {NAV_GROUPS.map((group) => (
+        {visibleGroups.map((group) => (
           <div key={group.label}>
             <div className="nav-group">{group.label}</div>
             {group.items.map((item) => (

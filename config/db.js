@@ -12,6 +12,7 @@ import { migrateOrderNotes } from './order-notes-migration.js';
 import { migrateWholesalePrices } from './wholesale-migration.js';
 import { migrateBonusPromotions } from './bonus-migration.js';
 import { migrateIncomingStock } from './incoming-migration.js';
+import { migrateUserAccess } from './access-migration.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -153,6 +154,7 @@ async function inisialisasiDatabase() {
         await withTransaction(migrateWholesalePrices);
         await withTransaction(migrateBonusPromotions);
         await withTransaction(migrateIncomingStock);
+        await withTransaction(migrateUserAccess);
         await migrateCustomerStatus(db);
         await withTransaction(migratePayments);
         await withTransaction(migratePrintSettings);
