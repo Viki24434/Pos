@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('api', {
   // ===== Settings =====
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (data) => ipcRenderer.invoke('save-settings', data),
+  backupDatabase: () => ipcRenderer.invoke('backup-database'),
 
   // ===== Products =====
   getProducts: () => ipcRenderer.invoke('get-products'),

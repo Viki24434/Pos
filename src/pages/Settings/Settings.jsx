@@ -3,6 +3,7 @@ import Button from '../../components/Button/Button';
 import Alert from '../../components/Alert/Alert';
 import PaymentMethods from '../../components/PaymentMethods/PaymentMethods';
 import PrintSettings from '../../components/PrintSettings';
+import BackupSettings from '../../components/BackupSettings';
 
 export default function Settings() {
   const [storeName, setStoreName] = useState('');
@@ -116,6 +117,7 @@ export default function Settings() {
       </div>
       <PaymentMethods />
       <PrintSettings />
+      <BackupSettings />
     </div>
   );
 }

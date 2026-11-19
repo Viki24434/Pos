@@ -14,6 +14,7 @@ const Finance = require('../models/Finance.js');
 const { registerCustomerHandlers } = require('../electron/customer-handlers.cjs');
 const { registerPaymentHandlers } = require('../electron/payment-handlers.cjs');
 const { registerPrintHandlers } = require('../electron/receipt.cjs');
+const { registerBackupHandlers } = require('../electron/backup.cjs');
 
 let server;
 let window;
@@ -53,6 +54,8 @@ app.whenReady().then(async () => {
     try {
         profile = await fs.mkdtemp(path.join(os.tmpdir(), 'app-js-variants-ui-'));
         app.setPath('userData', profile);
+        const backupPath = path.join(profile, 'ui-backup.sqlite');
+        registerBackupHandlers(ipcMain, { app, BrowserWindow, dialog: { showSaveDialog: async () => ({ canceled: false, filePath: backupPath }) } });
         await inisialisasiDatabase();
         db = await getDbConnection();
         const express = require('express');
@@ -192,6 +195,14 @@ app.whenReady().then(async () => {
         await clickButton('Tambah Metode');
         await waitFor(`document.querySelector('#payment-method-name').value === '' && document.body.innerText.includes('DANA')`);
         console.log('PASS: settings creates a custom payment method');
+        await clickButton('Backup Database');
+        await waitFor(`document.body.innerText.includes('Backup berhasil disimpan')`);
+        const { open } = require('sqlite');
+        const sqlite3 = require('sqlite3');
+        const backedUp = await open({ filename: backupPath, driver: sqlite3.Database, mode: sqlite3.OPEN_READONLY });
+        assert.equal((await backedUp.get('SELECT COUNT(*) as count FROM orders')).count, (await db.get('SELECT COUNT(*) as count FROM orders')).count);
+        await backedUp.close();
+        console.log('PASS: backup button creates a readable database through the save dialog');
         await waitFor(`!!document.querySelector('#receipt-printer-setting option[value="THERMAL-TEST"]')`);
         await evaluate(`document.querySelector('#receipt-paper-setting').value = '58mm'; document.querySelector('#receipt-paper-setting').dispatchEvent(new Event('change', { bubbles: true }))`);
         await evaluate(`document.querySelector('#receipt-printer-setting').value = 'THERMAL-TEST'; document.querySelector('#receipt-printer-setting').dispatchEvent(new Event('change', { bubbles: true }))`);

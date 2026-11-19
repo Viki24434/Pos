@@ -14,9 +14,17 @@ const __dirname = path.dirname(__filename);
 let dbInstance = null;
 let transactionQueue = Promise.resolve();
 
-async function withTransaction(work) {
+async function withDatabaseWork(work) {
     const pending = transactionQueue.then(async () => {
         const db = await getDbConnection();
+        return work(db);
+    });
+    transactionQueue = pending.catch(() => {});
+    return pending;
+}
+
+async function withTransaction(work) {
+    return withDatabaseWork(async db => {
         await db.exec('BEGIN IMMEDIATE');
         try {
             const result = await work(db);
@@ -27,8 +35,6 @@ async function withTransaction(work) {
             throw error;
         }
     });
-    transactionQueue = pending.catch(() => {});
-    return pending;
 }
 
 async function migrateProductVariants(db) {
@@ -151,5 +157,6 @@ export {
     inisialisasiDatabase,
     migrateProductVariants,
     migrateCustomerStatus,
-    withTransaction
+    withTransaction,
+    withDatabaseWork
 };

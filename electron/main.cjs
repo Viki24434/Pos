@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain, Menu, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, protocol, dialog } = require('electron');
+require('./backup.cjs').registerBackupHandlers(ipcMain, { app, BrowserWindow, dialog });
 const path = require('path');
 const fs = require('fs');
 const { inisialisasiDatabase, getDbConnection } = require('../config/db');
