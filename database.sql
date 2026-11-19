@@ -85,6 +85,9 @@ CREATE TABLE IF NOT EXISTS products (
   store_id INTEGER NOT NULL,
   purchase_price DECIMAL(15,2) DEFAULT 0.00,
   cost_known INTEGER NOT NULL DEFAULT 0,
+  wholesale_prices TEXT NOT NULL DEFAULT '[]',
+  buy_qty INTEGER NOT NULL DEFAULT 0,
+  free_qty INTEGER NOT NULL DEFAULT 0,
   vip_price REAL DEFAULT NULL CHECK(vip_price IS NULL OR vip_price >= 0),
   name VARCHAR(150) NOT NULL,
   price DECIMAL(10,2) NOT NULL,
@@ -100,6 +103,9 @@ CREATE TABLE IF NOT EXISTS product_variants (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
+  wholesale_prices TEXT NOT NULL DEFAULT '[]',
+  buy_qty INTEGER NOT NULL DEFAULT 0,
+  free_qty INTEGER NOT NULL DEFAULT 0,
   sku TEXT,
   purchase_price REAL DEFAULT NULL CHECK(purchase_price IS NULL OR purchase_price >= 0),
   vip_price REAL DEFAULT NULL CHECK(vip_price IS NULL OR vip_price >= 0),
@@ -143,6 +149,7 @@ CREATE INDEX IF NOT EXISTS idx_order_histories_order_id ON order_histories(order
 
 CREATE TABLE IF NOT EXISTS order_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  is_free INTEGER NOT NULL DEFAULT 0,
   order_id INTEGER NOT NULL,
   product_id INTEGER NOT NULL,
   variant_id INTEGER REFERENCES product_variants(id),

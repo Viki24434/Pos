@@ -9,6 +9,8 @@ const { getDbConnection, migrateProductVariants } = await import('../config/db.j
 const Product = await import('../models/Product.js');
 const { migrateVipPrices } = await import('../config/vip-migration.js');
 const { migrateCosts } = await import('../config/cost-migration.js');
+const { migrateWholesalePrices } = await import('../config/wholesale-migration.js');
+const { migrateBonusPromotions } = await import('../config/bonus-migration.js');
 const Order = await import('../models/Order.js');
 
 test('product variants and order stock integration', async t => {
@@ -21,6 +23,8 @@ test('product variants and order stock integration', async t => {
     await migrateProductVariants(db);
     await migrateVipPrices(db);
     await migrateCosts(db);
+    await migrateWholesalePrices(db);
+    await migrateBonusPromotions(db);
     await migrateProductVariants(db);
     const columns = await db.all('PRAGMA table_info(order_items)');
     assert.equal(columns.filter(column => column.name.startsWith('variant_')).length, 3);

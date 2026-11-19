@@ -9,6 +9,8 @@ import { migratePrintSettings } from './print-migration.js';
 import { migrateVipPrices } from './vip-migration.js';
 import { migrateCosts } from './cost-migration.js';
 import { migrateOrderNotes } from './order-notes-migration.js';
+import { migrateWholesalePrices } from './wholesale-migration.js';
+import { migrateBonusPromotions } from './bonus-migration.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -147,6 +149,8 @@ async function inisialisasiDatabase() {
         await withTransaction(migrateVipPrices);
         await withTransaction(migrateCosts);
         await withTransaction(migrateOrderNotes);
+        await withTransaction(migrateWholesalePrices);
+        await withTransaction(migrateBonusPromotions);
         await migrateCustomerStatus(db);
         await withTransaction(migratePayments);
         await withTransaction(migratePrintSettings);

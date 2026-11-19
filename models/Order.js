@@ -3,6 +3,7 @@ import { updateBalance } from './Finance.js';
 import { randomUUID } from 'node:crypto';
 import { requireActive } from './PaymentMethod.js';
 import { getSellingPrice } from '../shared/pricing.js';
+import { getBonusQuantity } from '../shared/promotions.js';
 const STORE_ID = 1;
 
 async function getAllOrders(filters = {}) {
@@ -42,7 +43,7 @@ async function getOrderById(id) {
 async function getOrderItems(order_id) {
     const db = await getDbConnection();
     const rows = await db.all(`SELECT oi.*, p.name as product_name,
-        CASE WHEN oi.variant_name IS NOT NULL THEN p.name || ' - ' || oi.variant_name ELSE p.name END as item_name
+        (CASE WHEN oi.variant_name IS NOT NULL THEN p.name || ' - ' || oi.variant_name ELSE p.name END) || CASE WHEN oi.is_free = 1 THEN ' (Gratis)' ELSE '' END as item_name
         FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = ?`, [order_id]);
     return rows;
 }
@@ -86,17 +87,21 @@ async function createOrder(customer_name, items, tax_amount, discount, customer_
                 throw new Error(`Varian ${product.name} sudah tidak tersedia.`);
             }
             const source = variant || product;
-            const sellingPrice = getSellingPrice(source, isVip);
+            const sellingPrice = getSellingPrice(source, isVip, qty);
             if (Number(item.price) !== sellingPrice) throw new Error(`Harga ${product.name} berubah. Muat ulang produk sebelum melanjutkan.`);
+            const bonusQty = getBonusQuantity(source, qty);
+            if (Number(item.bonus_qty ?? 0) !== bonusQty) throw new Error(`Promo ${product.name} berubah. Muat ulang produk sebelum melanjutkan.`);
+            const stockQty = qty + bonusQty;
             // Deduct immediately inside this transaction so duplicate cart lines cannot oversell.
             const result = variant
-                ? await db.run('UPDATE product_variants SET stock = stock - ? WHERE id = ? AND active = 1 AND stock >= ?', [qty, variant.id, qty])
-                : await db.run('UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?', [qty, product.id, qty]);
+                ? await db.run('UPDATE product_variants SET stock = stock - ? WHERE id = ? AND active = 1 AND stock >= ?', [stockQty, variant.id, stockQty])
+                : await db.run('UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?', [stockQty, product.id, stockQty]);
             if (!result.changes) throw new Error(`Stok ${product.name}${variant ? ' - ' + variant.name : ''} tidak mencukupi.`);
             if (variant) await db.run(`UPDATE products SET stock = (SELECT COALESCE(SUM(stock), 0)
                 FROM product_variants WHERE product_id = ? AND active = 1) WHERE id = ?`, [product.id, product.id]);
             checkedItems.push({ product_id: product.id, variant_id: variant?.id ?? null, variant_name: variant?.name ?? null,
                 purchase_price: variant?.purchase_price ?? (product.cost_known ? product.purchase_price : null), variant_sku: variant?.sku ?? null, qty, price: sellingPrice, subtotal: sellingPrice * qty });
+            if (bonusQty) checkedItems.push({ ...checkedItems.at(-1), qty: bonusQty, price: 0, subtotal: 0, is_free: 1 });
         }
         const invoice = `INV-${Date.now()}-${randomUUID().slice(0, 8)}`;
         let subtotal = 0;
@@ -115,8 +120,8 @@ async function createOrder(customer_name, items, tax_amount, discount, customer_
         const order_id = orderResult.lastID;
 
         for (let item of checkedItems) {
-            await db.run(`INSERT INTO order_items (order_id, product_id, variant_id, variant_name, variant_sku, qty, price, subtotal, purchase_price)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [order_id, item.product_id, item.variant_id, item.variant_name, item.variant_sku, item.qty, item.price, item.subtotal, item.purchase_price]);
+            await db.run(`INSERT INTO order_items (order_id, product_id, variant_id, variant_name, variant_sku, qty, price, subtotal, purchase_price, is_free)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [order_id, item.product_id, item.variant_id, item.variant_name, item.variant_sku, item.qty, item.price, item.subtotal, item.purchase_price, item.is_free || 0]);
         }
 
         const cekTable = await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='order_histories'");

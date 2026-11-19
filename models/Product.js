@@ -1,4 +1,6 @@
 ﻿import { getDbConnection, withTransaction } from '../config/db.js';
+import { normalizeWholesalePrices } from '../shared/pricing.js';
+import { normalizeBonusPromotion } from '../shared/promotions.js';
 const STORE_ID = 1;
 
 function nonNegative(value, label, integer = false) {
@@ -13,7 +15,9 @@ async function attachVariants(db, products) {
     const variants = await db.all(`SELECT v.* FROM product_variants v
         JOIN products p ON p.id = v.product_id WHERE p.store_id = ? AND v.active = 1 ORDER BY v.id`, [STORE_ID]);
     return products.map(product => ({ ...product, code: product.product_code,
-        variants: variants.filter(variant => variant.product_id === product.id) }));
+        wholesale_prices: normalizeWholesalePrices(product.wholesale_prices),
+        variants: variants.filter(variant => variant.product_id === product.id).map(variant => ({ ...variant,
+            wholesale_prices: normalizeWholesalePrices(variant.wholesale_prices, variant.price) })) }));
 }
 
 async function getAll() {
@@ -75,9 +79,15 @@ async function saveProduct(id, data) {
             const vip_price = vipInput == null || vipInput === '' ? null : nonNegative(vipInput, 'Harga VIP varian');
             const costInput = variant.purchase_price === undefined ? previousVariants.find(row => row.id === variantId)?.purchase_price : variant.purchase_price;
             const purchase_price = costInput == null || costInput === '' ? null : nonNegative(costInput, 'Harga modal varian');
-            return { purchase_price, vip_price, id: variantId, name: variantName, sku, price: nonNegative(variant.price, 'Harga varian'), stock: nonNegative(variant.stock, 'Stok varian', true) };
+            const price = nonNegative(variant.price, 'Harga varian');
+            const wholesale_prices = normalizeWholesalePrices(variant.wholesale_prices ?? previousVariants.find(row => row.id === variantId)?.wholesale_prices, price);
+            const previous = previousVariants.find(row => row.id === variantId);
+            const promo = normalizeBonusPromotion({ buy_qty: variant.buy_qty ?? previous?.buy_qty, free_qty: variant.free_qty ?? previous?.free_qty });
+            return { ...promo, purchase_price, vip_price, wholesale_prices, id: variantId, name: variantName, sku, price, stock: nonNegative(variant.stock, 'Stok varian', true) };
         });
         const price = variants.length ? Math.min(...variants.map(v => v.price)) : nonNegative(data.price, 'Harga produk');
+        const wholesalePrices = normalizeWholesalePrices(data.wholesale_prices ?? existing?.wholesale_prices, variants.length ? Infinity : price);
+        const promo = normalizeBonusPromotion({ buy_qty: data.buy_qty ?? existing?.buy_qty, free_qty: data.free_qty ?? existing?.free_qty });
         const vipInput = data.vip_price === undefined ? existing?.vip_price : data.vip_price;
         const vipPrice = vipInput == null || vipInput === '' ? null : nonNegative(vipInput, 'Harga VIP');
         const stock = variants.length ? variants.reduce((sum, v) => sum + v.stock, 0) : nonNegative(data.stock ?? 0, 'Stok produk', true);
@@ -94,15 +104,17 @@ async function saveProduct(id, data) {
         }
         // Keep removed variants for historical order references.
         await db.run('UPDATE products SET vip_price = ? WHERE id = ?', [vipPrice, id]);
+        await db.run('UPDATE products SET wholesale_prices = ? WHERE id = ?', [JSON.stringify(wholesalePrices), id]);
+        await db.run('UPDATE products SET buy_qty = ?, free_qty = ? WHERE id = ?', [promo.buy_qty, promo.free_qty, id]);
         await db.run('UPDATE products SET cost_known = ? WHERE id = ?', [costKnown ? 1 : 0, id]);
         await db.run('UPDATE product_variants SET active = 0 WHERE product_id = ?', [id]);
         for (const variant of variants) {
             if (variant.id) {
-                await db.run('UPDATE product_variants SET name=?, sku=?, price=?, stock=?, vip_price=?, purchase_price=?, active=1 WHERE id=? AND product_id=?',
-                    [variant.name, variant.sku, variant.price, variant.stock, variant.vip_price, variant.purchase_price, variant.id, id]);
+                await db.run('UPDATE product_variants SET name=?, sku=?, price=?, stock=?, vip_price=?, purchase_price=?, wholesale_prices=?, buy_qty=?, free_qty=?, active=1 WHERE id=? AND product_id=?',
+                    [variant.name, variant.sku, variant.price, variant.stock, variant.vip_price, variant.purchase_price, JSON.stringify(variant.wholesale_prices), variant.buy_qty, variant.free_qty, variant.id, id]);
             } else {
-                await db.run('INSERT INTO product_variants (product_id, name, sku, price, stock, vip_price, purchase_price) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                    [id, variant.name, variant.sku, variant.price, variant.stock, variant.vip_price, variant.purchase_price]);
+                await db.run('INSERT INTO product_variants (product_id, name, sku, price, stock, vip_price, purchase_price, wholesale_prices, buy_qty, free_qty) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    [id, variant.name, variant.sku, variant.price, variant.stock, variant.vip_price, variant.purchase_price, JSON.stringify(variant.wholesale_prices), variant.buy_qty, variant.free_qty]);
             }
         }
         return result;

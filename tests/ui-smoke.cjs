@@ -134,6 +134,10 @@ app.whenReady().then(async () => {
         await fill('.variant-editor-row:nth-child(2) input[step="1"]', 5);
         await fill('.variant-editor-row:nth-child(2) input[placeholder="Harga biasa"]', 45000);
         await fill('.variant-editor-row:nth-child(2) input[placeholder="Modal produk"]', 30000);
+        await evaluate(`document.querySelector('.variant-editor-row .wholesale-editor summary').click()`);
+        await clickButton('Tambah Tingkat Harga');
+        await fill('.wholesale-tier input[step="1"]', 2);
+        await fill('.wholesale-tier input[step="0.01"]', 59000);
         await clickButton('Tambah Varian');
         await fill('.variant-editor-row:nth-child(3) input', 'Biru / L');
         await fill('.variant-editor-row:nth-child(3) input[type="number"]', 55000);
@@ -147,6 +151,7 @@ app.whenReady().then(async () => {
         await clickButton('Simpan Produk');
         await waitFor(`!document.querySelector('#modal-product') && document.body.innerText.includes('Kaos UI')`);
         assert.equal(savedPayload.variants.length, 2);
+        assert.deepEqual(savedPayload.variants[0].wholesale_prices, [{ min_qty: 2, price: 59000 }]);
         const [product] = await Product.getAll();
         assert.equal(product.stock, 8);
         assert.equal(product.price, 55000);
@@ -425,6 +430,47 @@ app.whenReady().then(async () => {
         window.destroy();
         window = mainWindow;
         console.log('PASS: old payment bridge shows recovery instructions instead of a blank page');
+
+        await evaluate(`location.hash = '#/products'`);
+        await waitFor(`document.body.innerText.includes('Manajemen Produk')`);
+        await clickButton('Tambah Produk');
+        await fill('#modal-product input[placeholder="Otomatis"]', 'GRO-UI');
+        await fill('#modal-product input[required]', 'Minyak Grosir UI');
+        await evaluate(`(() => { const inputs = Array.from(document.querySelectorAll('#modal-product .input-group')); for (const [label, value] of [['Harga Jual', '10000'], ['Stok', '100']]) { const input = inputs.find(group => group.querySelector('label')?.textContent.startsWith(label)).querySelector('input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })); } })()`);
+        await evaluate(`document.querySelector('.wholesale-editor summary').click()`);
+        await clickButton('Tambah Tingkat Harga');
+        await fill('.wholesale-tier:nth-of-type(1) input', 6);
+        await fill('.wholesale-tier:nth-of-type(1) input[step="0.01"]', 9000);
+        await clickButton('Tambah Tingkat Harga');
+        await fill('.wholesale-tier:nth-of-type(2) input', 12);
+        await fill('.wholesale-tier:nth-of-type(2) input[step="0.01"]', 8000);
+        if (process.env.APP_JS_UI_SCREENSHOTS) {
+            await evaluate(`document.querySelector('.wholesale-editor').scrollIntoView({block:'center'})`);
+            await new Promise(resolve => setTimeout(resolve, 350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'wholesale-editor.png'), (await window.webContents.capturePage()).toPNG());
+        }
+        await clickButton('Simpan Produk');
+        await waitFor(`!document.querySelector('#modal-product') && document.body.innerText.includes('Minyak Grosir UI')`);
+        const wholesaleProduct = (await Product.getAll()).find(row => row.code === 'GRO-UI');
+        assert.deepEqual(wholesaleProduct.wholesale_prices, [{ min_qty: 6, price: 9000 }, { min_qty: 12, price: 8000 }]);
+        await evaluate(`location.hash = '#/orders/create'`);
+        await waitFor(`document.querySelectorAll('.product-tile').length === 2`);
+        await evaluate(`Array.from(document.querySelectorAll('.product-tile')).find(tile => tile.innerText.includes('Minyak Grosir UI')).click()`);
+        await waitFor(`document.querySelectorAll('.qty-stepper').length === 1`);
+        for (let quantity = 2; quantity <= 12; quantity++) {
+            await evaluate(`document.querySelector('.qty-stepper button:last-child').click()`);
+            await waitFor(`document.querySelector('.qty-stepper').textContent.includes('${quantity}')`);
+            if (quantity === 6) assert.ok(await evaluate(`document.querySelector('.cart-unit-price').textContent.includes('9.000')`));
+        }
+        assert.ok(await evaluate(`document.querySelector('.cart-unit-price').textContent.includes('8.000')`));
+        await evaluate(`document.querySelector('.qty-stepper button:first-child').click()`);
+        await waitFor(`document.querySelector('.cart-unit-price').textContent.includes('9.000')`);
+        await clickButton('Simpan Pesanan (Bayar Nanti)');
+        await waitFor(`document.body.innerText.includes('Riwayat Pesanan')`);
+        const wholesaleOrder = await db.get('SELECT * FROM orders ORDER BY id DESC LIMIT 1');
+        assert.equal(wholesaleOrder.total_amount, 99000);
+        assert.equal((await Order.getOrderItems(wholesaleOrder.id))[0].price, 9000);
+        console.log('PASS: wholesale editor saves tiers and checkout reprices upward and downward across quantity thresholds');
         await evaluate(`location.hash = '#/settings'`);
         await waitFor(`document.body.innerText.includes('Pulihkan Backup')`);
         await clickButton('Pulihkan Backup');

@@ -38,7 +38,7 @@ export default function CreateOrder() {
   const pricedCart = cart.map(item => {
     const product = products.find(row => row.id === item.product_id);
     const source = item.variant_id ? product?.variants?.find(row => row.id === item.variant_id) : product;
-    const price = source ? getSellingPrice(source, isVip) : item.price;
+    const price = source ? getSellingPrice(source, isVip, item.qty) : item.price;
     return { ...item, price, subtotal: price * item.qty };
   });
 
@@ -213,7 +213,7 @@ export default function CreateOrder() {
   const currentProducts = filteredProducts.slice(startIndex, startIndex + ITEMS_PER_PAGE);
 
   const cartColumns = [
-    { key: 'name', label: 'Item' },
+    { key: 'name', label: 'Item', render: item => <div>{item.name}<small className="cart-unit-price">{formatRp(item.price)} / satuan</small></div> },
     {
       key: 'qty',
       label: 'Qty',
