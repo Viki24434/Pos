@@ -26,6 +26,7 @@ function renderReceipt(data, paper = data.store.receipt_paper || '80mm') {
     </style></head><body><main><header><h1>${escapeHtml(store.name || 'POS Percetakan')}</h1><p>${escapeHtml(store.address)}</p><p>${escapeHtml(store.phone)}</p><hr><strong>STRUK PESANAN</strong></header>
     <p>${escapeHtml(order.invoice_number)}</p><p>${escapeHtml(order.created_at)}</p><p>Pelanggan: ${escapeHtml(order.customer_name)}${order.customer_status ? ' (' + escapeHtml(order.customer_status) + ')' : ''}</p><hr>
     ${items.map(item => `<div class="item"><strong>${escapeHtml(item.item_name || item.product_name)}</strong><div class="line"><span>${escapeHtml(item.qty)} x ${escapeHtml(rupiah(item.price))}</span><strong>${escapeHtml(rupiah(item.subtotal))}</strong></div></div>`).join('')}
+    ${items.filter(item=>item.batches?.length).map(item=>'<p class="muted">'+escapeHtml(item.item_name || item.product_name)+': '+item.batches.map(batch=>escapeHtml((batch.batch_code ? 'Batch '+batch.batch_code : 'Batch')+' ('+batch.qty+')'+(batch.expires_on ? ' EXP '+batch.expires_on : ''))).join('; ')+'</p>').join('')}
     ${order.notes ? '<hr><strong>Catatan Pesanan</strong><p>' + escapeHtml(order.notes) + '</p>' : ''}
     <hr>${row('Subtotal', subtotal)}${row('Diskon', order.discount_amount)}${row('Pajak', order.tax_amount)}<div class="total">${row('TOTAL', order.total_amount)}</div><hr>
     ${payments.map(payment => row(payment.payment_method, payment.amount)).join('') || '<p>Belum ada pembayaran.</p>'}

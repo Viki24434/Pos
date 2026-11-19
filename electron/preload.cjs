@@ -23,6 +23,9 @@ contextBridge.exposeInMainWorld('api', {
 
   // ===== Products =====
   getProducts: () => ipcRenderer.invoke('get-products'),
+  getExpiryBatches: (filter) => ipcRenderer.invoke('get-expiry-batches', filter),
+  setBatchExpiry: (data) => ipcRenderer.invoke('set-batch-expiry', data),
+  removeBatchStock: (data) => ipcRenderer.invoke('remove-batch-stock', data),
   getSuppliers: () => ipcRenderer.invoke('get-suppliers'),
   saveSupplier: (data) => ipcRenderer.invoke('save-supplier', data),
   getStockReceipts: (filters) => ipcRenderer.invoke('get-stock-receipts', filters),

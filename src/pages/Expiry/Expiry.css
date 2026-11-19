@@ -1,0 +1,14 @@
+.expiry-page { display:flex; flex-direction:column; gap:20px; }
+.expiry-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+.expiry-summary .card { margin:0; text-align:left; display:flex; flex-direction:column; gap:8px; }
+.expiry-summary span,.expiry-help { color:var(--muted); font-size:12px; }
+.expiry-summary strong { font-size:24px; color:var(--primary); }
+.expiry-danger,.expiry-summary .expiry-danger { color:#b91c1c; font-weight:600; }
+.expiry-filter { display:flex; align-items:end; flex-wrap:wrap; gap:12px; }
+.expiry-filter .input-group { flex:1; min-width:170px; margin:0; }
+.expiry-filter .input-group:first-child { flex:2; }
+.expiry-filter > .btn { min-height:40px; }
+.expiry-table small,#expiry-modal small { display:block; margin-top:5px; color:var(--muted); }
+.expiry-actions { display:flex; gap:6px; min-width:210px; }
+.expiry-actions .btn { white-space:nowrap; }
+@media(max-width:700px) { .expiry-summary { grid-template-columns:1fr; } .expiry-filter .input-group { flex:1 1 100%; min-width:0; } .expiry-filter > .btn { width:100%; } }

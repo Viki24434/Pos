@@ -1,5 +1,6 @@
 import { withDatabaseWork, withTransaction } from '../config/db.js';
 import { randomUUID } from 'node:crypto';
+import { reconcileBatches, expiryDate } from './Batches.js';
 
 function checkedId(value, label) {
     const number = Number(value);
@@ -74,9 +75,12 @@ export async function createReceipt(data) {
                 variant = await db.get('SELECT * FROM product_variants WHERE id=? AND product_id=? AND active=1', [input.variant_id ?? null, product.id]);
                 if (!variant) throw new Error(`Pilih varian yang aktif untuk ${product.name}.`);
             } else if (input.variant_id != null) throw new Error(`Varian ${product.name} tidak tersedia.`);
-            const key = `${product.id}:${variant?.id || 0}`;
+            const expires_on=expiryDate(input.expires_on);
+            const batch_code=String(input.batch_code || '').trim();
+            const key = `${product.id}:${variant?.id || 0}:${batch_code}:${expires_on || ''}`;
             if (keys.has(key)) throw new Error('Barang yang sama cukup dicatat dalam satu baris.');
             keys.add(key);
+            await reconcileBatches(db,product.id,variant?.id ?? null,(variant || product).stock);
             const stock = Number((variant || product).stock) + qty;
             if (!Number.isSafeInteger(stock) || stock < 0 || !Number.isSafeInteger(Number(product.stock) + qty)) throw new Error('Jumlah stok terlalu besar.');
             if (variant) {
@@ -87,11 +91,15 @@ export async function createReceipt(data) {
                 await db.run('UPDATE products SET stock=? WHERE id=?', [stock, product.id]);
                 if (updateCost) await db.run('UPDATE products SET purchase_price=?, cost_known=1 WHERE id=?', [priceCents / 100, product.id]);
             }
-            items.push({ product_id: product.id, variant_id: variant?.id ?? null, item_name: product.name + (variant ? ' - ' + variant.name : ''), unit_name: product.unit_name || '', qty, purchase_price: priceCents / 100, subtotal: subtotal / 100 });
+            const batch=await db.run('INSERT INTO inventory_batches(product_id,variant_id,batch_code,expires_on,received_qty,remaining_qty) VALUES(?,?,?,?,?,?)',[product.id,variant?.id ?? null,batch_code,expires_on,qty,qty]);
+            items.push({ batch_id: batch.lastID, batch_code, expires_on, product_id: product.id, variant_id: variant?.id ?? null, item_name: product.name + (variant ? ' - ' + variant.name : ''), unit_name: product.unit_name || '', qty, purchase_price: priceCents / 100, subtotal: subtotal / 100 });
         }
         const result = await db.run(`INSERT INTO stock_receipts (store_id,supplier_id,user_id,number,request_id,supplier_name,reference,receipt_date,notes,update_cost,total_amount)
             VALUES (1,?,?,?,?,?,?,?,?,?,?)`, [supplierId, userId, `BM-${Date.now()}-${randomUUID().slice(0,8)}`, requestId, supplier.name, reference, date, notes, updateCost ? 1 : 0, totalCents / 100]);
-        for (const item of items) await db.run('INSERT INTO stock_receipt_items (receipt_id,product_id,variant_id,item_name,unit_name,qty,purchase_price,subtotal) VALUES (?,?,?,?,?,?,?,?)', [result.lastID, item.product_id, item.variant_id, item.item_name, item.unit_name, item.qty, item.purchase_price, item.subtotal]);
+        for (const item of items) {
+            const savedItem=await db.run('INSERT INTO stock_receipt_items (receipt_id,product_id,variant_id,item_name,unit_name,qty,purchase_price,subtotal,batch_code,expires_on) VALUES (?,?,?,?,?,?,?,?,?,?)', [result.lastID, item.product_id, item.variant_id, item.item_name, item.unit_name, item.qty, item.purchase_price, item.subtotal,item.batch_code,item.expires_on]);
+            await db.run('UPDATE inventory_batches SET receipt_item_id=? WHERE id=?',[savedItem.lastID,item.batch_id]);
+        }
         return result.lastID;
     });
 }

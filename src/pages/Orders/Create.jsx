@@ -16,6 +16,7 @@ import { getSellingPrice } from '../../../shared/pricing';
 import { getBonusQuantity } from '../../../shared/promotions';
 
 const ITEMS_PER_PAGE = 12; // Jumlah produk per halaman
+const stockOf = item => item?.sellable_stock ?? item?.stock ?? 0;
 
 export default function CreateOrder() {
   const navigate = useNavigate();
@@ -89,7 +90,7 @@ export default function CreateOrder() {
       setVariantProduct(product);
       return;
     }
-    const stock = variant ? variant.stock : product.stock;
+    const stock = stockOf(variant || product);
     const price = getSellingPrice(variant || product, isVip);
     if (stock <= 0) return;
     const key = `${product.id}:${variant?.id || 'base'}`;
@@ -123,7 +124,7 @@ export default function CreateOrder() {
         .map((item) => {
           if (item.key === key) {
             const productRef = products.find(p => p.id === item.product_id);
-            const stock = item.variant_id ? productRef?.variants?.find(v => v.id === item.variant_id)?.stock : productRef?.stock;
+            const stock = stockOf(item.variant_id ? productRef?.variants?.find(v => v.id === item.variant_id) : productRef);
             const newQty = item.qty + delta;
             
             const source = item.variant_id ? productRef?.variants?.find(v => v.id === item.variant_id) : productRef;
@@ -291,7 +292,7 @@ export default function CreateOrder() {
               <p style={{ textAlign: 'center', gridColumn: '1 / -1', padding: '20px', color: 'var(--muted)' }}>Produk tidak ditemukan.</p>
             ) : (
               currentProducts.map((p) => {
-                const isOutOfStock = p.stock <= 0;
+                const isOutOfStock = stockOf(p) <= 0;
                 
                 return (
                   <div 
@@ -319,7 +320,7 @@ export default function CreateOrder() {
                       zIndex: 2,
                       boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
                     }}>
-                      Stok: {p.stock}
+                      Stok: {stockOf(p)}
                     </span>
 
                     <img 
@@ -425,9 +426,9 @@ export default function CreateOrder() {
       <Modal isOpen={!!variantProduct} onClose={() => setVariantProduct(null)} title={`Pilih Varian: ${variantProduct?.name || ''}`} maxWidth={550}>
         <div className="variant-options">
           {variantProduct?.variants.map(variant => (
-            <button type="button" className="variant-option" key={variant.id} disabled={variant.stock <= 0} onClick={() => addToCart(variantProduct, variant)}>
+            <button type="button" className="variant-option" key={variant.id} disabled={stockOf(variant) <= 0} onClick={() => addToCart(variantProduct, variant)}>
               <div><strong>{variant.name}</strong>{variant.sku && <small>SKU: {variant.sku}</small>}</div>
-              <div><strong>{formatRp(getSellingPrice(variant, isVip))}</strong><small>{variant.stock > 0 ? `Stok: ${variant.stock}` : 'Stok habis'}</small></div>
+              <div><strong>{formatRp(getSellingPrice(variant, isVip))}</strong><small>{stockOf(variant) > 0 ? `Stok: ${stockOf(variant)}` : 'Stok habis'}</small></div>
             </button>
           ))}
         </div>

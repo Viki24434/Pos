@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto';
 import { requireActive } from './PaymentMethod.js';
 import { getSellingPrice } from '../shared/pricing.js';
 import { getBonusQuantity } from '../shared/promotions.js';
+import { reconcileBatches, consumeBatches } from './Batches.js';
+import { ensureBatchTables } from '../config/expiry-migration.js';
 const STORE_ID = 1;
 
 async function getAllOrders(filters = {}) {
@@ -42,10 +44,14 @@ async function getOrderById(id) {
 
 async function getOrderItems(order_id) {
     const db = await getDbConnection();
+    await ensureBatchTables(db);
     const rows = await db.all(`SELECT oi.*, p.name as product_name,
         (CASE WHEN oi.variant_name IS NOT NULL THEN p.name || ' - ' || oi.variant_name ELSE p.name END) || CASE WHEN oi.is_free = 1 THEN ' (Gratis)' ELSE '' END as item_name
         FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = ?`, [order_id]);
-    return rows;
+    const allocations=await db.all(`SELECT a.order_item_id,a.qty,b.batch_code,b.expires_on FROM order_item_batches a
+        JOIN inventory_batches b ON b.id=a.batch_id JOIN order_items i ON i.id=a.order_item_id
+        WHERE i.order_id=? AND (b.batch_code<>'' OR b.expires_on IS NOT NULL) ORDER BY a.id`,[order_id]);
+    return rows.map(row=>({...row,batches:allocations.filter(item=>item.order_item_id===row.id)}));
 }
 
 async function getOrderPayments(orderId) {
@@ -92,6 +98,9 @@ async function createOrder(customer_name, items, tax_amount, discount, customer_
             const bonusQty = getBonusQuantity(source, qty);
             if (Number(item.bonus_qty ?? 0) !== bonusQty) throw new Error(`Promo ${product.name} berubah. Muat ulang produk sebelum melanjutkan.`);
             const stockQty = qty + bonusQty;
+            await reconcileBatches(db,product.id,variant?.id ?? null,source.stock);
+            const allocations=await consumeBatches(db,product.id,variant?.id ?? null,qty);
+            const bonusAllocations=bonusQty ? await consumeBatches(db,product.id,variant?.id ?? null,bonusQty) : [];
             // Deduct immediately inside this transaction so duplicate cart lines cannot oversell.
             const result = variant
                 ? await db.run('UPDATE product_variants SET stock = stock - ? WHERE id = ? AND active = 1 AND stock >= ?', [stockQty, variant.id, stockQty])
@@ -100,8 +109,8 @@ async function createOrder(customer_name, items, tax_amount, discount, customer_
             if (variant) await db.run(`UPDATE products SET stock = (SELECT COALESCE(SUM(stock), 0)
                 FROM product_variants WHERE product_id = ? AND active = 1) WHERE id = ?`, [product.id, product.id]);
             checkedItems.push({ product_id: product.id, variant_id: variant?.id ?? null, variant_name: variant?.name ?? null,
-                purchase_price: variant?.purchase_price ?? (product.cost_known ? product.purchase_price : null), variant_sku: variant?.sku ?? null, qty, price: sellingPrice, subtotal: sellingPrice * qty });
-            if (bonusQty) checkedItems.push({ ...checkedItems.at(-1), qty: bonusQty, price: 0, subtotal: 0, is_free: 1 });
+                allocations, purchase_price: variant?.purchase_price ?? (product.cost_known ? product.purchase_price : null), variant_sku: variant?.sku ?? null, qty, price: sellingPrice, subtotal: sellingPrice * qty });
+            if (bonusQty) checkedItems.push({ ...checkedItems.at(-1), allocations: bonusAllocations, qty: bonusQty, price: 0, subtotal: 0, is_free: 1 });
         }
         const invoice = `INV-${Date.now()}-${randomUUID().slice(0, 8)}`;
         let subtotal = 0;
@@ -120,8 +129,9 @@ async function createOrder(customer_name, items, tax_amount, discount, customer_
         const order_id = orderResult.lastID;
 
         for (let item of checkedItems) {
-            await db.run(`INSERT INTO order_items (order_id, product_id, variant_id, variant_name, variant_sku, qty, price, subtotal, purchase_price, is_free)
+            const savedItem=await db.run(`INSERT INTO order_items (order_id, product_id, variant_id, variant_name, variant_sku, qty, price, subtotal, purchase_price, is_free)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [order_id, item.product_id, item.variant_id, item.variant_name, item.variant_sku, item.qty, item.price, item.subtotal, item.purchase_price, item.is_free || 0]);
+            for (const allocation of item.allocations) await db.run('INSERT INTO order_item_batches(order_item_id,batch_id,qty) VALUES(?,?,?)',[savedItem.lastID,allocation.batch_id,allocation.qty]);
         }
 
         const cekTable = await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='order_histories'");

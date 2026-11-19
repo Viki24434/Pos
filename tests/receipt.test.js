@@ -33,3 +33,9 @@ test('receipt escapes multiline notes and hides the section when empty', () => {
  assert.ok(!html.includes('<script>'));
  assert.ok(!renderReceipt(fixture).includes('Catatan Pesanan'));
 });
+
+test('receipt shows allocated expiry batches with escaped batch codes', () => {
+ const html=renderReceipt({...fixture,items:[{...fixture.items[0],batches:[{batch_code:'<LOT>&',qty:2,expires_on:'2027-01-01'}]}]});
+ assert.ok(html.includes('Batch &lt;LOT&gt;&amp; (2) EXP 2027-01-01'));
+ assert.ok(!html.includes('<LOT>'));
+});

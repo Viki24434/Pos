@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard/Dashboard';
 import Orders from './pages/Orders/Orders';
 import Receivables from './pages/Receivables/Receivables';
 import IncomingStock from './pages/IncomingStock/IncomingStock';
+import Expiry from './pages/Expiry/Expiry';
 import CreateOrder from './pages/Orders/Create';
 import Products from './pages/Products/Products';
 import Customers from './pages/Customers/Customers';
@@ -77,6 +78,7 @@ function AppRoutes() {
         <Route path="orders" element={<AccessRoute permission="sales.view"><Orders /></AccessRoute>} />
         <Route path="receivables" element={<AccessRoute permission="receivables.manage"><Receivables /></AccessRoute>} />
         <Route path="incoming-stock" element={<AccessRoute permission="stock.manage"><IncomingStock /></AccessRoute>} />
+        <Route path="expiry" element={<AccessRoute permission={['stock.manage','products.manage']}><Expiry /></AccessRoute>} />
         <Route path="orders/create" element={<AccessRoute permission="sales.create"><CreateOrder /></AccessRoute>} />
         <Route path="products" element={<AccessRoute permission="products.manage"><Products /></AccessRoute>} />
         <Route path="customers" element={<AccessRoute permission="customers.manage"><Customers /></AccessRoute>} />

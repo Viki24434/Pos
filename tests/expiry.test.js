@@ -1,0 +1,83 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import process from 'node:process';
+import { migrateIncomingStock } from '../config/incoming-migration.js';
+import { migrateExpiry } from '../config/expiry-migration.js';
+
+const directory=await fs.mkdtemp(path.join(os.tmpdir(),'app-js-expiry-'));
+process.env.APP_JS_DB_PATH=path.join(directory,'active.sqlite');
+const {getDbConnection}=await import('../config/db.js');
+const Product=await import('../models/Product.js');
+const Order=await import('../models/Order.js');
+const Incoming=await import('../models/IncomingStock.js');
+const Batches=await import('../models/Batches.js');
+const {createBackup,restoreBackup}=await import('../models/Backup.js');
+
+test('expiry batches preserve stock, apply FEFO to paid and free goods, and restore safely',async t=>{
+    const db=await getDbConnection();
+    t.after(async()=>{await db.close();await fs.rm(directory,{recursive:true,force:true});});
+    await db.exec(await fs.readFile(new URL('../database.sql',import.meta.url),'utf8'));
+    await migrateIncomingStock(db);
+    const dates=await db.get("SELECT DATE('now','localtime') as today,DATE('now','localtime','-1 day') as yesterday,DATE('now','localtime','+5 day') as soon,DATE('now','localtime','+20 day') as later");
+    const product=await Product.create({name:'Susu',price:10000,purchase_price:4000,stock:4,buy_qty:2,free_qty:1});
+    await migrateExpiry(db);await migrateExpiry(db);
+    const original=await db.get('SELECT * FROM inventory_batches WHERE product_id=?',[product.lastID]);
+    assert.equal(original.remaining_qty,4);
+    await Batches.setBatchExpiry({id:original.id,qty:2,batch_code:'OLD',expires_on:dates.yesterday});
+    assert.equal((await Product.getById(product.lastID)).stock,4);
+    assert.equal((await Product.getById(product.lastID)).sellable_stock,2);
+    const supplier=await Incoming.saveSupplier({name:'Supplier Susu'});
+    const receipt=await Incoming.createReceipt({supplier_id:supplier,user_id:1,receipt_date:dates.today,reference:'EXP-1',items:[
+        {product_id:product.lastID,qty:3,purchase_price:4000,batch_code:'EARLY',expires_on:dates.soon},
+        {product_id:product.lastID,qty:4,purchase_price:4000,batch_code:'LATE',expires_on:dates.later},
+        {product_id:product.lastID,qty:1,purchase_price:4000,batch_code:'TODAY',expires_on:dates.today},
+    ]});
+    assert.equal((await Incoming.getReceiptDetail(receipt)).items[0].expires_on,dates.soon);
+    assert.equal((await Product.getById(product.lastID)).stock,12);
+    assert.equal((await Product.getById(product.lastID)).sellable_stock,10);
+    assert.equal((await Batches.getExpiryBatches({status:'expired'})).rows.length,1);
+    assert.equal((await Batches.getExpiryBatches({status:'soon',days:7})).rows.length,2);
+    assert.equal((await Batches.getExpiryBatches({status:'undated'})).rows[0].remaining_qty,2);
+    const id=await Order.createOrder('Umum',[{product_id:product.lastID,qty:4,price:10000,bonus_qty:2}],0,0);
+    const allocations=await db.all(`SELECT b.batch_code,i.is_free,a.qty FROM order_item_batches a JOIN order_items i ON i.id=a.order_item_id JOIN inventory_batches b ON b.id=a.batch_id WHERE i.order_id=? ORDER BY a.id`,[id]);
+    assert.deepEqual(allocations.map(row=>[row.batch_code,row.qty,row.is_free]),[['TODAY',1,0],['EARLY',3,0],['LATE',2,1]]);
+    assert.deepEqual((await Order.getOrderItems(id))[0].batches.map(row=>row.batch_code),['TODAY','EARLY']);
+    assert.equal((await Product.getById(product.lastID)).stock,6);
+    assert.equal((await Product.getById(product.lastID)).sellable_stock,4);
+    const before=await db.all('SELECT id,remaining_qty FROM inventory_batches ORDER BY id');
+    await assert.rejects(Order.createOrder('Umum',[{product_id:product.lastID,qty:4,price:10000,bonus_qty:2}],0,0),/layak jual/);
+    assert.deepEqual(await db.all('SELECT id,remaining_qty FROM inventory_batches ORDER BY id'),before);
+    const expired=await db.get("SELECT * FROM inventory_batches WHERE batch_code='OLD'");
+    await assert.rejects(Batches.setBatchExpiry({id:expired.id,qty:2,expires_on:'2026-02-30'}),/Tanggal/);
+    await assert.rejects(Batches.removeBatchStock({id:expired.id,qty:3,user_id:1,reason:'Kedaluwarsa'}),/berubah/);
+    await Batches.removeBatchStock({id:expired.id,qty:2,user_id:1,reason:'Kedaluwarsa'});
+    assert.equal((await Product.getById(product.lastID)).stock,4);
+    assert.equal((await db.get('SELECT qty FROM batch_removals')).qty,2);
+    const remainingProduct=await Product.getById(product.lastID);
+    await assert.rejects(Product.update(product.lastID,{...remainingProduct,stock:1}),/batch bertanggal/);
+    await Product.update(product.lastID,{...remainingProduct,stock:3});
+    assert.equal((await Product.getById(product.lastID)).stock,3);
+    assert.equal((await db.get('SELECT SUM(remaining_qty) as qty FROM inventory_batches WHERE product_id=?',[product.lastID])).qty,3);
+    await assert.rejects(Product.update(product.lastID,{...remainingProduct,variants:[{name:'Baru',price:10000,stock:3}]}),/batch bertanggal/);
+    const variants=await Product.create({name:'Yoghurt',variants:[{name:'Apel',price:10000,stock:2},{name:'Jeruk',price:10000,stock:2}]});
+    const [apel,jeruk]=(await Product.getById(variants.lastID)).variants;
+    const variantBatch=await db.get('SELECT * FROM inventory_batches WHERE variant_id=?',[apel.id]);
+    await Batches.setBatchExpiry({id:variantBatch.id,qty:2,expires_on:dates.yesterday});
+    assert.equal((await Product.getById(variants.lastID)).sellable_stock,2);
+    await assert.rejects(Order.createOrder('Umum',[{product_id:variants.lastID,variant_id:apel.id,qty:1,price:10000}],0,0),/layak jual/);
+    const validOrder=await Order.createOrder('Umum',[{product_id:variants.lastID,variant_id:jeruk.id,qty:1,price:10000}],0,0);
+    assert.ok(validOrder>0);
+    await assert.rejects(Product.update(variants.lastID,{...(await Product.getById(variants.lastID)),variants:[{...jeruk,stock:1}]}),/batch bertanggal/);
+    const backup=path.join(directory,'backup.sqlite');
+    await createBackup(backup);
+    const saved=await db.all('SELECT * FROM inventory_batches ORDER BY id');
+    const late=await db.get("SELECT * FROM inventory_batches WHERE batch_code='LATE'");
+    await Batches.setBatchExpiry({id:late.id,qty:late.remaining_qty,expires_on:dates.yesterday});
+    await restoreBackup(backup,directory);
+    assert.deepEqual(await db.all('SELECT * FROM inventory_batches ORDER BY id'),saved);
+    assert.equal((await db.all('PRAGMA foreign_key_check')).length,0);
+    assert.equal((await db.all('SELECT * FROM order_item_batches')).length,4);
+});

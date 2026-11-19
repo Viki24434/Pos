@@ -1,6 +1,8 @@
 ﻿import { getDbConnection, withTransaction } from '../config/db.js';
 import { normalizeWholesalePrices } from '../shared/pricing.js';
 import { normalizeBonusPromotion } from '../shared/promotions.js';
+import { reconcileBatches } from './Batches.js';
+import { ensureBatchTables } from '../config/expiry-migration.js';
 const STORE_ID = 1;
 
 function nonNegative(value, label, integer = false) {
@@ -12,11 +14,15 @@ function nonNegative(value, label, integer = false) {
 }
 
 async function attachVariants(db, products) {
+    await ensureBatchTables(db);
+    const expired=await db.all("SELECT product_id,variant_id,SUM(remaining_qty) as qty FROM inventory_batches WHERE store_id=1 AND expires_on<DATE('now','localtime') GROUP BY product_id,variant_id");
+    const available = (productId,variantId,stock) => Math.max(0,Number(stock)-Number(expired.find(row=>row.product_id===productId && row.variant_id===variantId)?.qty || 0));
     const variants = await db.all(`SELECT v.* FROM product_variants v
         JOIN products p ON p.id = v.product_id WHERE p.store_id = ? AND v.active = 1 ORDER BY v.id`, [STORE_ID]);
     return products.map(product => ({ ...product, code: product.product_code,
+        sellable_stock: variants.some(v=>v.product_id===product.id) ? variants.filter(v=>v.product_id===product.id).reduce((sum,v)=>sum+available(product.id,v.id,v.stock),0) : available(product.id,null,product.stock),
         wholesale_prices: normalizeWholesalePrices(product.wholesale_prices),
-        variants: variants.filter(variant => variant.product_id === product.id).map(variant => ({ ...variant,
+        variants: variants.filter(variant => variant.product_id === product.id).map(variant => ({ ...variant, sellable_stock: available(product.id,variant.id,variant.stock),
             wholesale_prices: normalizeWholesalePrices(variant.wholesale_prices, variant.price) })) }));
 }
 
@@ -40,6 +46,7 @@ async function getByCategory(category_id) {
 
 async function saveProduct(id, data) {
     return withTransaction(async db => {
+        await ensureBatchTables(db);
         const existing = id ? await db.get('SELECT * FROM products WHERE id = ? AND store_id = ?', [id, STORE_ID]) : null;
         if (id && !existing) throw new Error('Produk tidak ditemukan.');
         const name = String(data.name || '').trim();
@@ -59,6 +66,18 @@ async function saveProduct(id, data) {
         const previousVariants = id ? await db.all('SELECT * FROM product_variants WHERE product_id = ?', [id]) : [];
         const inputVariants = data.variants === undefined ? previousVariants.filter(v => v.active) : data.variants;
         if (!Array.isArray(inputVariants)) throw new Error('Daftar varian tidak valid.');
+        if (existing) {
+            const activePrevious=previousVariants.filter(v=>v.active);
+            if (activePrevious.length) {
+                for (const variant of activePrevious) {
+                    await reconcileBatches(db,id,variant.id,variant.stock);
+                    if (!inputVariants.some(row=>Number(row.id)===variant.id) && await db.get('SELECT id FROM inventory_batches WHERE product_id=? AND variant_id=? AND expires_on IS NOT NULL AND remaining_qty>0',[id,variant.id])) throw new Error('Varian masih memiliki batch bertanggal. Keluarkan stok batch sebelum menghapus varian.');
+                }
+            } else {
+                await reconcileBatches(db,id,null,existing.stock);
+                if (inputVariants.length && await db.get('SELECT id FROM inventory_batches WHERE product_id=? AND variant_id IS NULL AND expires_on IS NOT NULL AND remaining_qty>0',[id])) throw new Error('Produk masih memiliki batch bertanggal. Keluarkan stok batch sebelum beralih ke varian.');
+            }
+        }
         const names = new Set();
         const skus = new Set();
         const ids = new Set();
@@ -117,6 +136,12 @@ async function saveProduct(id, data) {
                     [id, variant.name, variant.sku, variant.price, variant.stock, variant.vip_price, variant.purchase_price, JSON.stringify(variant.wholesale_prices), variant.buy_qty, variant.free_qty]);
             }
         }
+        const savedVariants=await db.all('SELECT id,stock FROM product_variants WHERE product_id=? AND active=1',[id]);
+        if (savedVariants.length) {
+            await db.run('UPDATE inventory_batches SET remaining_qty=0 WHERE product_id=? AND variant_id IS NULL',[id]);
+            for (const variant of savedVariants) await reconcileBatches(db,id,variant.id,variant.stock);
+        } else await reconcileBatches(db,id,null,stock);
+        await db.run('UPDATE inventory_batches SET remaining_qty=0 WHERE product_id=? AND variant_id IN (SELECT id FROM product_variants WHERE product_id=? AND active=0)',[id,id]);
         return result;
     });
 }
@@ -136,6 +161,8 @@ async function updateStock(id, qty) {
         const product = await db.get('SELECT stock FROM products WHERE id = ? AND store_id = ?', [id, STORE_ID]);
         if (!product) throw new Error('Produk tidak ditemukan.');
         const stock = nonNegative(product.stock + Number(qty), 'Stok produk', true);
+        await reconcileBatches(db,id,null,product.stock);
+        await reconcileBatches(db,id,null,stock);
         return db.run('UPDATE products SET stock = ? WHERE id = ?', [stock, id]);
     });
 }

@@ -30,7 +30,7 @@ test('main-process sessions enforce permissions, cashier identity, cost privacy 
     ipcMain.handle('get-order-detail', (_event,id) => Order.getOrderItems(id));
     ipcMain.handle('update-product', async (_event,id,data) => { await Product.update(id,data); return true; });
     let privilegedCalls = 0;
-    for (const channel of ['backup-database','restore-database','get-sales-profit-report','get-dashboard-data','get-finance-summary','store-expenditure','save-settings','create-stock-receipt','create-category','future-unknown-command']) {
+    for (const channel of ['get-expiry-batches','set-batch-expiry','remove-batch-stock','backup-database','restore-database','get-sales-profit-report','get-dashboard-data','get-finance-summary','store-expenditure','save-settings','create-stock-receipt','create-category','future-unknown-command']) {
         ipcMain.handle(channel, () => { privilegedCalls++; return {success:true}; });
     }
     const event = id => ({ sender: Object.assign(new EventEmitter(), {id}) });
@@ -49,7 +49,7 @@ test('main-process sessions enforce permissions, cashier identity, cost privacy 
     assert.equal(can(cashProfile,'reports.view'),false);
     assert.equal((await invoke(cashier,'auth-login',{username:'kasir',password:'kasir123'})).success,true);
     assert.equal(await invoke(stranger,'check-auth'),null);
-    for (const channel of ['get-users','save-user','backup-database','restore-database','get-sales-profit-report','get-dashboard-data','get-finance-summary','store-expenditure','save-settings','create-stock-receipt','create-category','future-unknown-command']) await assert.rejects(invoke(cashier,channel,{}),/hak akses|tidak diizinkan/);
+    for (const channel of ['get-expiry-batches','set-batch-expiry','remove-batch-stock','get-users','save-user','backup-database','restore-database','get-sales-profit-report','get-dashboard-data','get-finance-summary','store-expenditure','save-settings','create-stock-receipt','create-category','future-unknown-command']) await assert.rejects(invoke(cashier,channel,{}),/hak akses|tidak diizinkan/);
     assert.equal(privilegedCalls,0);
     const product = await Product.create({name:'Rahasia Modal',price:10000,purchase_price:4000,stock:10});
     const variants = await Product.create({name:'Varian',variants:[{name:'A',price:10000,purchase_price:5000,stock:2}]});

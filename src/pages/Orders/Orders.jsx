@@ -113,7 +113,7 @@ export default function Orders() {
   ];
 
   const itemColumns = [
-    { key: 'item_name', label: 'Item', render: (item) => item.item_name || item.product_name },
+    { key: 'item_name', label: 'Item', render: item => <div>{item.item_name || item.product_name}{item.batches?.map((batch,index)=><small key={index} className="order-batch-label">{batch.batch_code ? `Batch ${batch.batch_code}` : 'Batch'} · {batch.qty} unit{batch.expires_on ? ` · EXP ${new Date(batch.expires_on+'T00:00:00').toLocaleDateString('id-ID')}` : ''}</small>)}</div> },
     { key: 'qty', label: 'Qty', headerStyle: { textAlign: 'center' }, cellStyle: { textAlign: 'center' } },
     { key: 'price', label: 'Harga', headerStyle: { textAlign: 'right' }, cellStyle: { textAlign: 'right' }, render: (i) => formatRp(i.price) },
     { key: 'subtotal', label: 'Subtotal', headerStyle: { textAlign: 'right' }, cellStyle: { textAlign: 'right' }, render: (i) => formatRp(i.subtotal) },

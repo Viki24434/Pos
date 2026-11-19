@@ -18,6 +18,7 @@ const { registerPaymentHandlers } = require('../electron/payment-handlers.cjs');
 const { registerPrintHandlers } = require('../electron/receipt.cjs');
 const { registerBackupHandlers } = require('../electron/backup.cjs');
 const { registerIncomingHandlers } = require('../electron/incoming-handlers.cjs');
+const { registerExpiryHandlers } = require('../electron/expiry-handlers.cjs');
 
 let server;
 let window;
@@ -87,6 +88,7 @@ app.whenReady().then(async () => {
         ipcMain.handle('get-units', () => []);
         registerPaymentHandlers(ipcMain);
         registerIncomingHandlers(ipcMain);
+        registerExpiryHandlers(ipcMain);
         const printWindowFactory = function(options) {
             const target = new BrowserWindow(options);
             target.webContents.print = (printOptions, callback) => {
@@ -563,6 +565,10 @@ app.whenReady().then(async () => {
         await evaluate(`document.querySelector('.incoming-item select').value = '${wholesaleProduct.id}:0'; document.querySelector('.incoming-item select').dispatchEvent(new Event('change', {bubbles:true}))`);
         await fill('input[aria-label="Jumlah barang 1"]', 24);
         await fill('input[aria-label="Harga beli barang 1"]', 7000);
+        await evaluate(`document.querySelector('.incoming-expiry summary').click()`);
+        const {expiry:incomingExpiry}=await db.get("SELECT DATE('now','localtime','+7 day') as expiry");
+        await fill('input[aria-label="Nomor batch barang 1"]','LOT-UI');
+        await fill('input[aria-label="Kedaluwarsa barang 1"]',incomingExpiry);
         await clickButton('Tambah Barang');
         const beforeIncoming = await Product.getById(product.id);
         const incomingVariant = beforeIncoming.variants[0];
@@ -606,6 +612,43 @@ app.whenReady().then(async () => {
         assert.equal((await db.get('SELECT supplier_name FROM stock_receipts ORDER BY id DESC LIMIT 1')).supplier_name, 'Supplier UI');
         console.log('PASS: inline supplier creation, mixed incoming stock, costs, receipt detail, supplier edit and immutable supplier snapshot through real IPC');
 
+        await evaluate(`document.querySelector('a[href="#/expiry"]').click()`);
+        await waitFor(`!!document.querySelector('#expiry-search') && document.querySelector('.expiry-table').innerText.includes('LOT-UI')`);
+        await fill('#expiry-search','Minyak Grosir UI');
+        await evaluate(`document.querySelector('#expiry-status').value='all';document.querySelector('#expiry-status').dispatchEvent(new Event('change',{bubbles:true}))`);
+        await clickButton('Cari');
+        await waitFor(`document.querySelectorAll('.expiry-table tbody tr').length===2`);
+        await evaluate(`Array.from(document.querySelectorAll('.expiry-table tbody tr')).find(row=>row.innerText.includes('LOT-UI')).querySelector('button[title="Atur Kedaluwarsa"]').click()`);
+        await waitFor(`!!document.querySelector('#expiry-quantity')`);
+        await fill('#expiry-quantity',3);
+        await fill('#expiry-code','LOT-EXPIRED');
+        await fill('#expiry-date',yesterday);
+        await clickButton('Simpan Batch');
+        await waitFor(`!document.querySelector('#expiry-modal') && document.querySelector('.expiry-table').innerText.includes('LOT-EXPIRED')`);
+        assert.equal((await Product.getById(wholesaleProduct.id)).stock,111);
+        assert.equal((await Product.getById(wholesaleProduct.id)).sellable_stock,108);
+        if(process.env.APP_JS_UI_SCREENSHOTS){
+            await new Promise(resolve=>setTimeout(resolve,350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS,'expiry-desktop.png'),(await window.webContents.capturePage()).toPNG());
+            window.setSize(650,950);
+            await new Promise(resolve=>setTimeout(resolve,350));
+            assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),true);
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS,'expiry-narrow.png'),(await window.webContents.capturePage()).toPNG());
+            window.setSize(1280,900);
+        }
+        await evaluate(`document.querySelector('#expiry-status').value='expired';document.querySelector('#expiry-status').dispatchEvent(new Event('change',{bubbles:true}))`);
+        await clickButton('Cari');
+        await waitFor(`document.querySelectorAll('.expiry-table tbody tr').length===1 && document.querySelector('.expiry-table').innerText.includes('LOT-EXPIRED')`);
+        await evaluate(`document.querySelector('button[title="Keluarkan Stok Batch"]').click()`);
+        await waitFor(`!!document.querySelector('#expiry-reason')`);
+        await fill('#expiry-quantity',1);
+        await evaluate(`document.querySelector('#expiry-modal button[type="submit"]').click()`);
+        await waitFor(`!document.querySelector('#expiry-modal') && document.body.innerText.includes('Stok batch sudah dikeluarkan.')`);
+        assert.equal((await Product.getById(wholesaleProduct.id)).stock,110);
+        assert.equal((await Product.getById(wholesaleProduct.id)).sellable_stock,108);
+        assert.equal((await db.get('SELECT qty FROM batch_removals ORDER BY id DESC LIMIT 1')).qty,1);
+        console.log('PASS: optional receipt expiry, batch split without stock addition, expired filter, disposal and sellable-stock exclusion');
+
         await evaluate(`document.querySelector('a[href="#/users"]').click()`);
         await waitFor(`document.body.innerText.includes('Pengaturan User') && !!document.querySelector('button[title="Edit Hak Akses"]')`);
         await clickButton('Tambah Akun');
@@ -635,7 +678,7 @@ app.whenReady().then(async () => {
         await fill('input[placeholder="Masukkan password"]','kasir123');
         await clickButton('Masuk Sekarang');
         await waitFor(`location.hash === '#/orders/create' && document.querySelectorAll('.product-tile').length === 2`);
-        for (const target of ['users','reports','products','finance','settings','incoming-stock']) assert.equal(await evaluate(`!!document.querySelector('a[href="#/${target}"]')`),false);
+        for (const target of ['users','reports','products','finance','settings','incoming-stock','expiry']) assert.equal(await evaluate(`!!document.querySelector('a[href="#/${target}"]')`),false);
         assert.equal(await evaluate(`!!document.querySelector('.discount-input')`),false);
         const cashierProducts=await evaluate(`window.api.getProducts()`);
         assert.equal('purchase_price' in cashierProducts[0],false);
@@ -659,6 +702,7 @@ app.whenReady().then(async () => {
         const cashierOrder=await db.get('SELECT * FROM orders ORDER BY id DESC LIMIT 1');
         assert.equal(cashierOrder.user_id,cashierAccount.id);
         assert.equal((await db.get('SELECT user_id FROM payments WHERE order_id=?',[cashierOrder.id])).user_id,cashierAccount.id);
+        assert.equal((await db.get('SELECT b.batch_code FROM order_item_batches a JOIN inventory_batches b ON b.id=a.batch_id JOIN order_items i ON i.id=a.order_item_id WHERE i.order_id=?',[cashierOrder.id])).batch_code,'LOT-UI');
         await evaluate(`document.querySelector('.sidebar-logout a').click()`);
         await waitFor(`document.body.innerText.includes('Masuk Sekarang')`);
         await fill('input[placeholder="Masukkan username"]','admin');

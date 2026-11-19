@@ -1,3 +1,4 @@
+import { migrateExpiry } from './expiry-migration.js';
 export async function migrateIncomingStock(db) {
     await db.exec(`
         CREATE TABLE IF NOT EXISTS suppliers (
@@ -41,4 +42,5 @@ export async function migrateIncomingStock(db) {
         );
         CREATE INDEX IF NOT EXISTS idx_stock_receipt_items_receipt ON stock_receipt_items(receipt_id);
     `);
+    await migrateExpiry(db);
 }

@@ -13,7 +13,7 @@ import './IncomingStock.css';
 const EMPTY_FILTER = { start: '', end: '', search: '' };
 const dateLabel = value => new Date(value + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
 const today = () => { const date = new Date(); return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`; };
-const newItem = () => ({ key: crypto.randomUUID(), selection: '', qty: '1', purchase_price: '' });
+const newItem = () => ({ key: crypto.randomUUID(), selection: '', qty: '1', purchase_price: '', batch_code: '', expires_on: '' });
 async function fetchData(filter) {
   if (!window.api?.getStockReceipts) throw new Error('Buka ulang aplikasi untuk memuat barang masuk.');
   const [receipts, suppliers, products] = await Promise.all([window.api.getStockReceipts(filter), window.api.getSuppliers(), window.api.getProducts()]);
@@ -85,7 +85,7 @@ export default function IncomingStock() {
       const items = form.items.map(row => {
         const option = options.find(item => item.key === row.selection);
         if (!option) throw new Error('Pilih produk atau varian pada setiap baris.');
-        return { product_id: option.product_id, variant_id: option.variant_id, qty: Number(row.qty), purchase_price: row.purchase_price };
+        return { product_id: option.product_id, variant_id: option.variant_id, qty: Number(row.qty), purchase_price: row.purchase_price, batch_code: row.batch_code, expires_on: row.expires_on };
       });
       const result = await window.api.createStockReceipt({ ...form, user_id: user?.id, items });
       if (!result?.success) throw new Error(result?.message || 'Gagal menyimpan barang masuk.');
@@ -142,6 +142,10 @@ export default function IncomingStock() {
             <Input aria-label={`Jumlah barang ${index+1}`} label="Jumlah *" type="number" min="1" step="1" required value={row.qty} onChange={event => updateItem(row.key, { qty: event.target.value })} />
             <Input aria-label={`Harga beli barang ${index+1}`} label="Harga Beli / Satuan *" type="number" min="0" step="0.01" required value={row.purchase_price} onChange={event => updateItem(row.key, { purchase_price: event.target.value })} />
             <Button variant="danger" aria-label={`Hapus barang masuk ${index+1}`} disabled={form.items.length === 1} onClick={() => setForm({ ...form, items: form.items.filter(item => item.key !== row.key) })}><i className="fas fa-trash" /></Button>
+            <details className="incoming-expiry"><summary>Batch & kedaluwarsa <span>Opsional</span></summary><div className="incoming-form-pair">
+              <Input aria-label={`Nomor batch barang ${index+1}`} label="Nomor Batch" value={row.batch_code} onChange={event => updateItem(row.key,{batch_code:event.target.value})} />
+              <Input aria-label={`Kedaluwarsa barang ${index+1}`} label="Tanggal Kedaluwarsa" type="date" value={row.expires_on} onChange={event => updateItem(row.key,{expires_on:event.target.value})} />
+            </div></details>
             <small>Subtotal: {formatRp(Math.round((Number(row.purchase_price) || 0) * 100) * (Number(row.qty) || 0) / 100)}</small>
           </div>)}
           <Button variant="secondary" icon="fas fa-plus" disabled={form.items.length >= 200} onClick={() => setForm({ ...form, items: [...form.items, newItem()] })}>Tambah Barang</Button>
@@ -163,7 +167,7 @@ export default function IncomingStock() {
     </Modal>
     <Modal id="incoming-detail" isOpen={!!detail} title="Detail Barang Masuk" maxWidth={850} onClose={() => setDetail(null)}>
       {detail && <><div className="incoming-detail-info"><div><strong>{detail.supplier_name}</strong><small>{detail.number}</small></div><div>{dateLabel(detail.receipt_date)}{detail.reference && <small>Nota: {detail.reference}</small>}</div></div>
-        <Table columns={[{ key: 'item_name', label: 'Barang' }, { key: 'qty', label: 'Jumlah', render: row => `${row.qty}${row.unit_name ? ` ${row.unit_name}` : ''}` }, { key: 'purchase_price', label: 'Harga Beli', render: row => formatRp(row.purchase_price) }, { key: 'subtotal', label: 'Subtotal', render: row => formatRp(row.subtotal) }]} data={detail.items} />
+        <Table columns={[{ key: 'item_name', label: 'Barang', render: row=><div>{row.item_name}{row.batch_code && <small>Batch: {row.batch_code}</small>}{row.expires_on && <small>Kedaluwarsa: {dateLabel(row.expires_on)}</small>}</div> }, { key: 'qty', label: 'Jumlah', render: row => `${row.qty}${row.unit_name ? ` ${row.unit_name}` : ''}` }, { key: 'purchase_price', label: 'Harga Beli', render: row => formatRp(row.purchase_price) }, { key: 'subtotal', label: 'Subtotal', render: row => formatRp(row.subtotal) }]} data={detail.items} />
         <div className="incoming-total"><span>Total Nilai Barang</span><strong>{formatRp(detail.total_amount)}</strong></div>
         {detail.notes && <p className="incoming-detail-notes">{detail.notes}</p>}<small>Dicatat oleh {detail.user_name || 'Pengguna'}{detail.update_cost ? ' · Harga modal diperbarui' : ''}</small>
       </>}

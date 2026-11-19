@@ -16,6 +16,7 @@ allow('receivables.manage', 'get-receivables set-receivable-due-date');
 allow('customers.manage', 'create-customer update-customer delete-customer');
 allow('products.manage', 'create-product update-product delete-product upload-product-image create-category update-category delete-category create-unit update-unit delete-unit');
 allow('stock.manage', 'get-suppliers save-supplier get-stock-receipts get-stock-receipt-detail create-stock-receipt');
+allow(['stock.manage','products.manage'], 'get-expiry-batches set-batch-expiry remove-batch-stock');
 allow('finance.view', 'get-finance-summary');
 allow('finance.manage', 'store-income store-expenditure');
 allow('reports.view', 'get-dashboard-data get-sales-report get-sales-profit-report get-product-report get-customer-report get-payment-method-report get-receivables-report get-income-expenditure-report get-profit-loss-report save-order-costs');
@@ -61,6 +62,7 @@ function createAccessControl(rawIpc) {
                 args[0] = { ...args[0], userId: user.id };
             }
             if (channel === 'process-payment') args[0] = { ...args[0], userId: user.id };
+            if (channel === 'remove-batch-stock') args[0] = { ...args[0], user_id: user.id };
             if (channel === 'create-stock-receipt') args[0] = { ...args[0], user_id: user.id };
             if (channel === 'create-stock-receipt' && !can(user, 'cost.view')) throw new Error('Harga modal memerlukan hak akses khusus.');
             if (channel === 'save-order-costs' && !can(user, 'cost.view')) throw new Error('Harga modal memerlukan hak akses khusus.');
