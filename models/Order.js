@@ -94,7 +94,7 @@ async function createOrder(customer_name, items, tax_amount, discount, customer_
             if (variant) await db.run(`UPDATE products SET stock = (SELECT COALESCE(SUM(stock), 0)
                 FROM product_variants WHERE product_id = ? AND active = 1) WHERE id = ?`, [product.id, product.id]);
             checkedItems.push({ product_id: product.id, variant_id: variant?.id ?? null, variant_name: variant?.name ?? null,
-                variant_sku: variant?.sku ?? null, qty, price: sellingPrice, subtotal: sellingPrice * qty });
+                purchase_price: variant?.purchase_price ?? (product.cost_known ? product.purchase_price : null), variant_sku: variant?.sku ?? null, qty, price: sellingPrice, subtotal: sellingPrice * qty });
         }
         const invoice = `INV-${Date.now()}-${randomUUID().slice(0, 8)}`;
         let subtotal = 0;
@@ -113,8 +113,8 @@ async function createOrder(customer_name, items, tax_amount, discount, customer_
         const order_id = orderResult.lastID;
 
         for (let item of checkedItems) {
-            await db.run(`INSERT INTO order_items (order_id, product_id, variant_id, variant_name, variant_sku, qty, price, subtotal)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [order_id, item.product_id, item.variant_id, item.variant_name, item.variant_sku, item.qty, item.price, item.subtotal]);
+            await db.run(`INSERT INTO order_items (order_id, product_id, variant_id, variant_name, variant_sku, qty, price, subtotal, purchase_price)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [order_id, item.product_id, item.variant_id, item.variant_name, item.variant_sku, item.qty, item.price, item.subtotal, item.purchase_price]);
         }
 
         const cekTable = await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='order_histories'");

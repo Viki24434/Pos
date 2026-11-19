@@ -39,6 +39,9 @@ async function saveProduct(id, data) {
         const existing = id ? await db.get('SELECT * FROM products WHERE id = ? AND store_id = ?', [id, STORE_ID]) : null;
         if (id && !existing) throw new Error('Produk tidak ditemukan.');
         const name = String(data.name || '').trim();
+        const costInput = data.purchase_price === undefined ? (existing?.cost_known ? existing.purchase_price : null) : data.purchase_price;
+        const costKnown = costInput != null && costInput !== '';
+        const purchasePrice = costKnown ? nonNegative(costInput, 'Harga modal') : 0;
         if (!name) throw new Error('Nama produk wajib diisi.');
         let code = String(data.code ?? data.product_code ?? existing?.product_code ?? '').trim();
         if (!code) {
@@ -70,14 +73,16 @@ async function saveProduct(id, data) {
             if (variantId) ids.add(variantId);
             const vipInput = variant.vip_price === undefined ? previousVariants.find(row => row.id === variantId)?.vip_price : variant.vip_price;
             const vip_price = vipInput == null || vipInput === '' ? null : nonNegative(vipInput, 'Harga VIP varian');
-            return { vip_price, id: variantId, name: variantName, sku, price: nonNegative(variant.price, 'Harga varian'), stock: nonNegative(variant.stock, 'Stok varian', true) };
+            const costInput = variant.purchase_price === undefined ? previousVariants.find(row => row.id === variantId)?.purchase_price : variant.purchase_price;
+            const purchase_price = costInput == null || costInput === '' ? null : nonNegative(costInput, 'Harga modal varian');
+            return { purchase_price, vip_price, id: variantId, name: variantName, sku, price: nonNegative(variant.price, 'Harga varian'), stock: nonNegative(variant.stock, 'Stok varian', true) };
         });
         const price = variants.length ? Math.min(...variants.map(v => v.price)) : nonNegative(data.price, 'Harga produk');
         const vipInput = data.vip_price === undefined ? existing?.vip_price : data.vip_price;
         const vipPrice = vipInput == null || vipInput === '' ? null : nonNegative(vipInput, 'Harga VIP');
         const stock = variants.length ? variants.reduce((sum, v) => sum + v.stock, 0) : nonNegative(data.stock ?? 0, 'Stok produk', true);
         const params = [data.category_id || null, data.unit_id || null, code, name,
-            data.purchase_price ?? existing?.purchase_price ?? 0, price, stock, data.img || existing?.img || 'default.png'];
+            purchasePrice, price, stock, data.img || existing?.img || 'default.png'];
         let result;
         if (id) {
             result = await db.run(`UPDATE products SET category_id=?, unit_id=?, product_code=?, name=?,
@@ -89,14 +94,15 @@ async function saveProduct(id, data) {
         }
         // Keep removed variants for historical order references.
         await db.run('UPDATE products SET vip_price = ? WHERE id = ?', [vipPrice, id]);
+        await db.run('UPDATE products SET cost_known = ? WHERE id = ?', [costKnown ? 1 : 0, id]);
         await db.run('UPDATE product_variants SET active = 0 WHERE product_id = ?', [id]);
         for (const variant of variants) {
             if (variant.id) {
-                await db.run('UPDATE product_variants SET name=?, sku=?, price=?, stock=?, vip_price=?, active=1 WHERE id=? AND product_id=?',
-                    [variant.name, variant.sku, variant.price, variant.stock, variant.vip_price, variant.id, id]);
+                await db.run('UPDATE product_variants SET name=?, sku=?, price=?, stock=?, vip_price=?, purchase_price=?, active=1 WHERE id=? AND product_id=?',
+                    [variant.name, variant.sku, variant.price, variant.stock, variant.vip_price, variant.purchase_price, variant.id, id]);
             } else {
-                await db.run('INSERT INTO product_variants (product_id, name, sku, price, stock, vip_price) VALUES (?, ?, ?, ?, ?, ?)',
-                    [id, variant.name, variant.sku, variant.price, variant.stock, variant.vip_price]);
+                await db.run('INSERT INTO product_variants (product_id, name, sku, price, stock, vip_price, purchase_price) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    [id, variant.name, variant.sku, variant.price, variant.stock, variant.vip_price, variant.purchase_price]);
             }
         }
         return result;

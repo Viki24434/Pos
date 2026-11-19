@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // ===== Reports =====
   getSalesReport: (filter) => ipcRenderer.invoke('get-sales-report', filter),
+  getSalesProfitReport: (filter) => ipcRenderer.invoke('get-sales-profit-report', filter),
   getProductReport: () => ipcRenderer.invoke('get-product-report'),
   getCustomerReport: (filter) => ipcRenderer.invoke('get-customer-report', filter),
   getPaymentMethodReport: (filter) => ipcRenderer.invoke('get-payment-method-report', filter),

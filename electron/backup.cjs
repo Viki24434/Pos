@@ -1,5 +1,5 @@
 const path = require('node:path');
-const { createBackup, inspectBackup, restoreBackup } = require('../models/Backup.js');
+const { createBackupPackage, inspectBackupPackage, restoreBackupPackage } = require('../models/BackupPackage.js');
 
 function registerBackupHandlers(ipcMain, { app, BrowserWindow, dialog }) {
     let busy = false;
@@ -9,18 +9,18 @@ function registerBackupHandlers(ipcMain, { app, BrowserWindow, dialog }) {
         try {
             const parent = BrowserWindow.fromWebContents(event.sender);
             const selected = await dialog.showOpenDialog(parent, {
-                title: 'Pilih Backup untuk Dipulihkan', filters: [{ name: 'Database SQLite', extensions: ['sqlite', 'db'] }], properties: ['openFile'],
+                title: 'Pilih Backup untuk Dipulihkan', filters: [{ name: 'Database SQLite', extensions: ['zip', 'sqlite', 'db'] }], properties: ['openFile'],
             });
             if (selected.canceled || !selected.filePaths?.length) return { canceled: true };
             const filename = selected.filePaths[0];
-            await inspectBackup(filename);
+            await inspectBackupPackage(filename);
             const confirmation = await dialog.showMessageBox(parent, {
                 type: 'warning', title: 'Pulihkan Backup', message: 'Ganti data aplikasi dengan backup ini?',
                 detail: `File: ${path.basename(filename)}\nData akan kembali ke kondisi saat backup dibuat. Cadangan data saat ini dibuat otomatis sebelum pemulihan. Setelah selesai, Anda perlu login menggunakan akun dari backup.`,
                 buttons: ['Batal', 'Pulihkan Backup'], defaultId: 0, cancelId: 0, noLink: true,
             });
             if (confirmation.response !== 1) return { canceled: true };
-            return { success: true, ...await restoreBackup(filename, path.join(app.getPath('userData'), 'backups')) };
+            return { success: true, ...await restoreBackupPackage(filename, path.join(app.getPath('userData'), 'backups'), path.join(app.getPath('userData'), 'uploads', 'product')) };
         } catch (error) { return { success: false, message: error.message || 'Gagal memulihkan backup.' }; }
         finally { busy = false; }
     });
@@ -34,12 +34,12 @@ function registerBackupHandlers(ipcMain, { app, BrowserWindow, dialog }) {
             }).format(new Date()).replace(/[^0-9]/g, '');
             const selected = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
                 title: 'Simpan Backup Database',
-                defaultPath: path.join(app.getPath('documents'), `APP-js-backup-${stamp}.sqlite`),
-                filters: [{ name: 'Database SQLite', extensions: ['sqlite'] }],
+                defaultPath: path.join(app.getPath('documents'), `APP-js-backup-${stamp}.zip`),
+                filters: [{ name: 'Backup Lengkap (Database dan Gambar)', extensions: ['zip'] }],
                 properties: ['showOverwriteConfirmation', 'createDirectory'],
             });
             if (selected.canceled || !selected.filePath) return { canceled: true };
-            return { success: true, ...await createBackup(selected.filePath) };
+            return { success: true, ...await createBackupPackage(selected.filePath, path.join(app.getPath('userData'), 'uploads', 'product')) };
         } catch (error) {
             return { success: false, message: error.message || 'Gagal membuat backup database.' };
         } finally { busy = false; }

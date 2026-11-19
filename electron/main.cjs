@@ -99,9 +99,11 @@ ipcMain.handle('get-dashboard-data', async () => {
         const chartLabels = chartRows.map(r => namaBulan[parseInt(r.month_num) - 1]);
         const chartData = chartRows.map(r => parseFloat(r.total));
 
+        const { today } = await db.get("SELECT DATE('now', 'localtime') as today");
+        const profit = await Report.getProfitLossReport(today, today);
         return {
             omzet: parseFloat(omzet),
-            laba: parseFloat(omzet) * 0.3,
+            laba: profit.net_profit,
             transaksi: transaksi,
             piutang: parseFloat(piutang),
             lowStocks: lowStocks,
@@ -229,6 +231,7 @@ require('./receipt.cjs').registerPrintHandlers(ipcMain, BrowserWindow);
 ipcMain.handle('get-sales-report', async (event, filter) => {
     try { return await Report.getSalesReport(filter.start, filter.end); } catch (e) { return []; }
 });
+ipcMain.handle('get-sales-profit-report', (_event, filter) => Report.getSalesProfitReport(filter));
 ipcMain.handle('get-product-report', async () => {
     try { return await Report.getProductReport(); } catch (e) { return []; }
 });

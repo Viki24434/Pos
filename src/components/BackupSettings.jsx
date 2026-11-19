@@ -44,13 +44,14 @@ export default function BackupSettings() {
       {backup && <Alert variant="success">
         <strong>Backup berhasil disimpan</strong>
         <span className="backup-file-path">{backup.path}</span>
-        <small>{Math.ceil(backup.size / 1024)} KB</small>
+        <small>{Math.ceil(backup.size / 1024)} KB ? {backup.imageCount || 0} gambar</small>
+        {backup.missingImages > 0 && <p>{backup.missingImages} gambar tidak ditemukan di komputer ini.</p>}
       </Alert>}
       <div className="backup-actions">
         <section className="backup-action">
           <div>
             <h4>Simpan Cadangan</h4>
-            <p>Simpan salinan data aplikasi ke file .sqlite di lokasi pilihan Anda.</p>
+            <p>Simpan salinan data aplikasi beserta gambar produk ke file .zip di lokasi pilihan Anda.</p>
           </div>
           <Button variant="primary" icon="fas fa-download" disabled={busy || restoring} onClick={saveBackup}>{busy ? 'Menyiapkan backup...' : 'Backup Database'}</Button>
         </section>
@@ -62,7 +63,7 @@ export default function BackupSettings() {
           <Button variant="secondary" icon="fas fa-upload" disabled={busy || restoring} onClick={restore}>Pulihkan Backup</Button>
         </section>
       </div>
-      <p className="backup-note">Backup mencakup produk, pelanggan, pesanan, pembayaran, akun, dan pengaturan. Gambar produk dicadangkan terpisah.</p>
+      <p className="backup-note">Backup mencakup produk, pelanggan, pesanan, pembayaran, akun, dan pengaturan. Gambar produk yang tersedia ikut disimpan dalam backup.</p>
       <Modal isOpen={restoring} title="Pemulihan Backup" onClose={() => {}}>
         <p>Ikuti dialog pemilihan dan konfirmasi. Tunggu sampai proses pemulihan selesai.</p>
       </Modal>

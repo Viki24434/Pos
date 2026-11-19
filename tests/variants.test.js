@@ -8,6 +8,7 @@ process.env.APP_JS_DB_PATH = ':memory:';
 const { getDbConnection, migrateProductVariants } = await import('../config/db.js');
 const Product = await import('../models/Product.js');
 const { migrateVipPrices } = await import('../config/vip-migration.js');
+const { migrateCosts } = await import('../config/cost-migration.js');
 const Order = await import('../models/Order.js');
 
 test('product variants and order stock integration', async t => {
@@ -19,6 +20,7 @@ test('product variants and order stock integration', async t => {
         .replace(/CREATE TABLE IF NOT EXISTS product_variants \([\s\S]*?CREATE INDEX IF NOT EXISTS idx_product_variants_product[^;]*;/, ''));
     await migrateProductVariants(db);
     await migrateVipPrices(db);
+    await migrateCosts(db);
     await migrateProductVariants(db);
     const columns = await db.all('PRAGMA table_info(order_items)');
     assert.equal(columns.filter(column => column.name.startsWith('variant_')).length, 3);

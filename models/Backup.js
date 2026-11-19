@@ -7,6 +7,7 @@ import { migrateProductVariants, migrateCustomerStatus } from '../config/db.js';
 import { migratePayments } from '../config/payment-migration.js';
 import { migratePrintSettings } from '../config/print-migration.js';
 import { migrateVipPrices } from '../config/vip-migration.js';
+import { migrateCosts } from '../config/cost-migration.js';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 
@@ -42,7 +43,7 @@ function copyIntoDatabase(db, filename) {
     });
 }
 
-export async function restoreBackup(filename, safetyDirectory) {
+export async function restoreBackup(filename, safetyDirectory, hooks = {}) {
     return withDatabaseWork(async db => {
         const activeFile = (await db.all('PRAGMA database_list')).find(database => database.name === 'main')?.file;
         if (activeFile && await canonicalPath(filename) === await canonicalPath(activeFile)) throw new Error('Pilih file backup, bukan database yang sedang digunakan.');
@@ -61,6 +62,7 @@ export async function restoreBackup(filename, safetyDirectory) {
                 await migrateProductVariants(staged);
                 await migrateCustomerStatus(staged);
                 await migrateVipPrices(staged);
+                await migrateCosts(staged);
                 await migratePayments(staged);
                 await migratePrintSettings(staged);
                 await staged.exec('COMMIT');
@@ -70,9 +72,13 @@ export async function restoreBackup(filename, safetyDirectory) {
             await fs.mkdir(safetyDirectory, { recursive: true });
             safetyPath = path.join(safetyDirectory, `sebelum-pemulihan-${randomUUID()}.sqlite`);
             await db.exec(`VACUUM INTO '${safetyPath.replaceAll("'", "''")}'`);
-            try { await copyIntoDatabase(db, stagedFile); }
+            try {
+                await hooks.beforeRestore?.(safetyPath);
+                await copyIntoDatabase(db, stagedFile);
+            }
             catch (error) {
-                await copyIntoDatabase(db, safetyPath);
+                try { await copyIntoDatabase(db, safetyPath); }
+                finally { await hooks.rollbackRestore?.(); }
                 throw error;
             }
             return { safetyPath };

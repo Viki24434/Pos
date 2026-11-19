@@ -11,6 +11,7 @@ const Product = require('../models/Product.js');
 const Order = require('../models/Order.js');
 const Customer = require('../models/Customer.js');
 const Finance = require('../models/Finance.js');
+const Report = require('../models/Report.js');
 const { registerCustomerHandlers } = require('../electron/customer-handlers.cjs');
 const { registerPaymentHandlers } = require('../electron/payment-handlers.cjs');
 const { registerPrintHandlers } = require('../electron/receipt.cjs');
@@ -54,7 +55,7 @@ app.whenReady().then(async () => {
     try {
         profile = await fs.mkdtemp(path.join(os.tmpdir(), 'app-js-variants-ui-'));
         app.setPath('userData', profile);
-        const backupPath = path.join(profile, 'ui-backup.sqlite');
+        const backupPath = path.join(profile, 'ui-backup.zip');
         registerBackupHandlers(ipcMain, { app, BrowserWindow, dialog: {
             showSaveDialog: async () => ({ canceled: false, filePath: backupPath }),
             showOpenDialog: async () => ({ canceled: false, filePaths: [backupPath] }),
@@ -96,6 +97,7 @@ app.whenReady().then(async () => {
         registerPrintHandlers(ipcMain, printWindowFactory);
         ipcMain.handle('get-order-detail', (_event, id) => Order.getOrderItems(id));
         ipcMain.handle('get-finance-summary', (_event, filters) => Finance.getSummary(filters.start, filters.end));
+        ipcMain.handle('get-sales-profit-report', (_event, filters) => Report.getSalesProfitReport(filters));
         registerCustomerHandlers(ipcMain);
         ipcMain.handle('create-product', async (_event, payload) => {
             savedPayload = payload;
@@ -126,10 +128,12 @@ app.whenReady().then(async () => {
         await fill('.variant-editor-row:nth-child(2) input[type="number"]', 60000);
         await fill('.variant-editor-row:nth-child(2) input[step="1"]', 5);
         await fill('.variant-editor-row:nth-child(2) input[placeholder="Harga biasa"]', 45000);
+        await fill('.variant-editor-row:nth-child(2) input[placeholder="Modal produk"]', 30000);
         await clickButton('Tambah Varian');
         await fill('.variant-editor-row:nth-child(3) input', 'Biru / L');
         await fill('.variant-editor-row:nth-child(3) input[type="number"]', 55000);
         await fill('.variant-editor-row:nth-child(3) input[step="1"]', 3);
+        await fill('.variant-editor-row:nth-child(3) input[placeholder="Modal produk"]', 25000);
         if (process.env.APP_JS_UI_SCREENSHOTS) {
             await fs.mkdir(process.env.APP_JS_UI_SCREENSHOTS, { recursive: true });
             await new Promise(resolve => setTimeout(resolve, 350));
@@ -220,7 +224,11 @@ app.whenReady().then(async () => {
         await waitFor(`document.body.innerText.includes('Backup berhasil disimpan')`);
         const { open } = require('sqlite');
         const sqlite3 = require('sqlite3');
-        const backedUp = await open({ filename: backupPath, driver: sqlite3.Database, mode: sqlite3.OPEN_READONLY });
+        const archive = await require('unzipper').Open.file(backupPath);
+        const databaseEntry = archive.files.find(entry => entry.path === 'database.sqlite');
+        const extractedDatabase = path.join(profile, 'checked-backup.sqlite');
+        await fs.writeFile(extractedDatabase, await databaseEntry.buffer());
+        const backedUp = await open({ filename: extractedDatabase, driver: sqlite3.Database, mode: sqlite3.OPEN_READONLY });
         assert.equal((await backedUp.get('SELECT COUNT(*) as count FROM orders')).count, (await db.get('SELECT COUNT(*) as count FROM orders')).count);
         await backedUp.close();
         console.log('PASS: backup button creates a readable database through the save dialog');
@@ -287,6 +295,14 @@ app.whenReady().then(async () => {
         assert.equal((await Finance.getSummary('', '')).saldoOther, 35000);
         assert.equal(await evaluate(`document.body.innerText.includes('Saldo Metode Lain')`), true);
         console.log('PASS: custom-method receipts appear in the finance page');
+        await evaluate(`location.hash = '#/reports'`);
+        await waitFor(`document.body.innerText.includes('Laporan Penjualan dan Laba') && document.body.innerText.includes('Rincian Penjualan')`);
+        assert.ok(await evaluate(`document.body.innerText.includes('Modal Tercatat') && document.body.innerText.includes('Laba Bersih')`));
+        if (process.env.APP_JS_UI_SCREENSHOTS) {
+            await new Promise(resolve => setTimeout(resolve, 350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'sales-profit-report.png'), (await window.webContents.capturePage()).toPNG());
+        }
+        console.log('PASS: sales and profit report loads through the report page');
 
         await evaluate(`location.hash = '#/customers'`);
         await waitFor(`document.body.innerText.includes('Data Langganan') && document.body.innerText.includes('Tidak ada data pelanggan.')`);

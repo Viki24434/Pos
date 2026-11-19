@@ -124,7 +124,7 @@ export default function Dashboard() {
 
       <div className="grid-stats">
         <StatCard variant="omzet" icon="fas fa-wallet" label="Omzet Hari Ini" value={formatRp(data?.omzet)} trendIcon="fas fa-arrow-up" trendLabel="Penjualan Aktif" />
-        <StatCard variant="laba" icon="fas fa-coins" label="Estimasi Laba" value={formatRp(data?.laba)} trendIcon="fas fa-chart-pie" trendLabel="Profit 30%" />
+        <StatCard variant="laba" icon="fas fa-coins" label="Laba Bersih Hari Ini" value={data?.laba == null ? 'Belum lengkap' : formatRp(data.laba)} trendIcon="fas fa-chart-pie" trendLabel="Berdasarkan modal dan pengeluaran" />
         <StatCard variant="transaksi" icon="fas fa-shopping-bag" label="Transaksi" value={`${data?.transaksi || 0} Struk`} trendIcon="fas fa-history" trendLabel="Real-time" />
         <StatCard variant="piutang" icon="fas fa-file-invoice-dollar" label="Piutang" value={formatRp(data?.piutang)} trendIcon="fas fa-exclamation-circle" trendLabel="Belum Lunas" />
       </div>

@@ -1,0 +1,47 @@
+﻿import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import process from 'node:process';
+process.env.APP_JS_DB_PATH = ':memory:';
+const { getDbConnection } = await import('../config/db.js');
+const Product = await import('../models/Product.js');
+const Order = await import('../models/Order.js');
+const Customer = await import('../models/Customer.js');
+const Report = await import('../models/Report.js');
+
+test('sales and profit reports preserve transaction costs, discounts, partial payments and date filters', async t => {
+    const db = await getDbConnection();
+    t.after(() => db.close());
+    await db.exec(await fs.readFile(new URL('../database.sql', import.meta.url), 'utf8'));
+    const vip = await Customer.addCustomer({ name: 'VIP', status: 'VIP' });
+    const product = await Product.create({ name: 'Modal Test', price: 100, vip_price: 90, purchase_price: 50, stock: 20 });
+    const id = await Order.createOrder('VIP', [{ product_id: product.lastID, price: 90, qty: 2 }], 5, 10, vip.lastID, { amount: 75, method: 'Cash' });
+    await db.run("UPDATE orders SET created_at='2026-11-10 05:00:00' WHERE id=?", [id]);
+    const saved = await Product.getById(product.lastID);
+    await Product.update(saved.id, { ...saved, purchase_price: 80 });
+    await db.run("INSERT INTO finance (store_id,date,cash_income,cash_expenditure) VALUES(1,'2026-11-10',10,20)");
+    let report = await Report.getSalesProfitReport({ start: '2026-11-01', end: '2026-11-30' });
+    assert.equal(report.summary.net_sales, 170);
+    assert.equal(report.summary.recorded_cost, 100);
+    assert.equal(report.summary.gross_profit, 70);
+    assert.equal(report.summary.net_profit, 60);
+    assert.equal(report.summary.total_paid, 75);
+    assert.equal(report.summary.receivables, 100);
+    assert.equal(report.summary.tax, 5);
+    assert.equal((await Report.getSalesProfitReport({ start: '2026-12-01', end: '2026-12-31' })).summary.net_sales, 0);
+    const unknown = await Product.create({ name: 'Tanpa modal', price: 100, stock: 3 });
+    const old = await Order.createOrder('Umum', [{ product_id: unknown.lastID, price: 100, qty: 1 }], 0, 0);
+    await db.run("UPDATE orders SET created_at='2026-11-10 06:00:00' WHERE id=?", [old]);
+    report = await Report.getSalesProfitReport({ start: '2026-11-01', end: '2026-11-30' });
+    assert.equal(report.summary.missing_orders, 1);
+    assert.equal(report.summary.gross_profit, null);
+    assert.equal(report.summary.net_profit, null);
+    assert.equal(report.rows.find(row => row.id === id).gross_profit, 70);
+    await assert.rejects(Report.getSalesProfitReport({ start: '2026-11-30', end: '2026-11-01' }), /Tanggal awal/);
+    const variantProduct = await Product.create({ name: 'Varian Modal', purchase_price: 30, variants: [
+        { name: 'Khusus', price: 100, purchase_price: 40, stock: 2 }, { name: 'Dasar', price: 100, stock: 2 },
+    ] });
+    const variants = (await Product.getById(variantProduct.lastID)).variants;
+    const variantOrder = await Order.createOrder('Varian', variants.map(variant => ({ product_id: variantProduct.lastID, variant_id: variant.id, price: 100, qty: 1 })), 0, 0);
+    assert.deepEqual((await Order.getOrderItems(variantOrder)).map(item => item.purchase_price), [40, 30]);
+});

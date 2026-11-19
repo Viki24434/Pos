@@ -1,0 +1,57 @@
+﻿import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import process from 'node:process';
+import { Buffer } from 'node:buffer';
+import { createWriteStream } from 'node:fs';
+import archiver from 'archiver';
+import unzipper from 'unzipper';
+const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'app-js-package-test-'));
+process.env.APP_JS_DB_PATH = path.join(directory, 'active.sqlite');
+const { getDbConnection } = await import('../config/db.js');
+const { createBackupPackage, inspectBackupPackage, restoreBackupPackage } = await import('../models/BackupPackage.js');
+
+test('complete backups restore image bytes, recover prior images, and reject unsafe archives', async t => {
+    const db = await getDbConnection();
+    t.after(async () => {
+        await db.close();
+        assert.equal(path.dirname(directory), path.resolve(os.tmpdir()));
+        await fs.rm(directory, { recursive: true, force: true });
+    });
+    await db.exec(await fs.readFile(new URL('../database.sql', import.meta.url), 'utf8'));
+    const images = path.join(directory, 'images');
+    await fs.mkdir(images);
+    await db.run("INSERT INTO products (store_id, name, price, stock, img) VALUES (1, 'Gambar Test', 100, 5, 'foto.webp')");
+    const oldImage = Buffer.from('original image bytes');
+    await fs.writeFile(path.join(images, 'foto.webp'), oldImage);
+    const target = path.join(directory, 'backup.zip');
+    const result = await createBackupPackage(target, images);
+    assert.equal(result.imageCount, 1);
+    assert.equal(result.missingImages, 0);
+    await inspectBackupPackage(target);
+    const entries = await unzipper.Open.file(target);
+    assert.ok(entries.files.some(entry => entry.path === 'database.sqlite'));
+    assert.deepEqual(await entries.files.find(entry => entry.path === 'images/foto.webp').buffer(), oldImage);
+    await fs.writeFile(path.join(images, 'foto.webp'), 'new image bytes');
+    await db.run("UPDATE products SET name = 'Data terbaru'");
+    const restored = await restoreBackupPackage(target, path.join(directory, 'safety'), images);
+    assert.deepEqual(await fs.readFile(path.join(images, 'foto.webp')), oldImage);
+    assert.equal((await db.get('SELECT name FROM products')).name, 'Gambar Test');
+    const safety = await unzipper.Open.file(restored.safetyPath);
+    assert.equal((await safety.files.find(entry => entry.path === 'images/foto.webp').buffer()).toString(), 'new image bytes');
+    const malicious = path.join(directory, 'malicious.zip');
+    await new Promise((resolve, reject) => {
+        const output = createWriteStream(malicious);
+        const archive = archiver('zip');
+        output.on('close', resolve); output.on('error', reject); archive.on('error', reject);
+        archive.pipe(output); archive.append('unsafe', { name: 'unexpected/escape.txt' }); archive.finalize().catch(reject);
+    });
+    await assert.rejects(restoreBackupPackage(malicious, path.join(directory, 'safety'), images), /tidak valid/);
+    assert.equal((await db.get('SELECT name FROM products')).name, 'Gambar Test');
+    await fs.unlink(path.join(images, 'foto.webp'));
+    const missing = await createBackupPackage(path.join(directory, 'missing.zip'), images);
+    assert.equal(missing.missingImages, 1);
+    assert.equal(missing.imageCount, 0);
+});
