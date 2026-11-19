@@ -25,3 +25,11 @@ test('receipt prints outstanding balance and supports all paper sizes', () => {
 test('receipt uses the saved paper size without a per-order selection', () => {
  assert.ok(renderReceipt({...fixture,store:{...fixture.store,receipt_paper:'58mm'}}).includes('50mm'));
 });
+
+test('receipt escapes multiline notes and hides the section when empty', () => {
+ const html = renderReceipt({...fixture, order: {...fixture.order, notes: 'Doff & potong\n<script>alert(1)</script>'}});
+ assert.ok(html.includes('Catatan Pesanan'));
+ assert.ok(html.includes('Doff &amp; potong\n&lt;script&gt;alert(1)&lt;/script&gt;'));
+ assert.ok(!html.includes('<script>'));
+ assert.ok(!renderReceipt(fixture).includes('Catatan Pesanan'));
+});

@@ -29,6 +29,7 @@ export default function CreateOrder() {
   
   const [cart, setCart] = useState([]);
   const [customerName, setCustomerName] = useState('');
+  const [notes, setNotes] = useState('');
   const [customers, setCustomers] = useState([]);
   const [customerId, setCustomerId] = useState('');
   const [customerError, setCustomerError] = useState('');
@@ -169,6 +170,7 @@ export default function CreateOrder() {
       const payload = {
         customerName: selectedCustomer?.name || customerName.trim() || 'Umum',
         customerId: customerId ? Number(customerId) : 0,
+        notes,
         items: pricedCart,
         discount: discValue,
         grandTotal,
@@ -377,6 +379,12 @@ export default function CreateOrder() {
           <div className="cart-table-wrapper">
             <Table columns={cartColumns} data={pricedCart} keyField="key" emptyText="Keranjang kosong" />
           </div>
+
+          <details className="order-notes">
+            <summary>{notes.trim() ? 'Catatan pesanan' : 'Tambah catatan'} <span>Opsional</span></summary>
+            <label className="order-notes-label" htmlFor="order-notes">Catatan pesanan</label>
+            <textarea id="order-notes" className="input-field" rows={2} placeholder="Contoh: pisahkan kemasan atau kirim sore." value={notes} onChange={event => setNotes(event.target.value)} />
+          </details>
 
           <div className="cart-summary">
             <div className="summary-row">

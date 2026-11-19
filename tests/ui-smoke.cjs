@@ -46,7 +46,8 @@ async function clickButton(text) {
 async function fill(selector, value) {
     await evaluate(`(() => {
         const input = document.querySelector(${JSON.stringify(selector)});
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(String(value))});
+        const prototype = input.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(prototype, 'value').set.call(input, ${JSON.stringify(String(value))});
         input.dispatchEvent(new Event('input', { bubbles: true }));
     })()`);
 }
@@ -175,6 +176,9 @@ app.whenReady().then(async () => {
         await waitFor(`document.querySelectorAll('.qty-stepper').length === 2`);
         await evaluate(`document.querySelectorAll('.qty-stepper')[1].querySelectorAll('button')[1].click()`);
         await waitFor(`document.querySelectorAll('.qty-stepper')[1].textContent.includes('2')`);
+        assert.equal(await evaluate(`document.querySelector('.order-notes').open`), false);
+        await evaluate(`document.querySelector('.order-notes summary').click()`);
+        await fill('#order-notes', 'Pisahkan kemasan & kirim\nSore hari');
         await clickButton('Bayar Sekarang');
         await waitFor(`!!document.querySelector('#checkout-payment #payment-method option[value="Cash"]')`);
         await fill('#payment-amount', 200000);
@@ -185,12 +189,18 @@ app.whenReady().then(async () => {
         const order = await db.get('SELECT * FROM orders ORDER BY id DESC LIMIT 1');
         assert.equal(order.total_amount, 170000);
         assert.equal(order.payment_status, 'Lunas');
+        assert.equal(order.notes, 'Pisahkan kemasan & kirim\nSore hari');
         assert.equal((await Order.getOrderItems(order.id)).length, 2);
         assert.equal((await db.get('SELECT SUM(amount) as amount FROM payments WHERE order_id = ?', [order.id])).amount, 170000);
         console.log('PASS: cashier keeps variants separate, changes quantities, and completes paid checkout');
+        await evaluate(`document.querySelector('button[title="Detail"]').click()`);
+        await waitFor(`!!document.querySelector('.order-detail-notes')`);
+        assert.equal(await evaluate(`document.querySelector('.order-detail-notes p').textContent`), order.notes);
+        await evaluate(`document.querySelector('.modal-close').click()`);
         await evaluate(`document.querySelector('button[title="Cetak Struk"]').click()`);
         await waitFor(`!!document.querySelector('#receipt-preview iframe')`);
         assert.ok(await evaluate(`document.querySelector('#receipt-preview iframe').srcdoc.includes('Kaos UI - Merah / XL')`));
+        assert.ok(await evaluate(`document.querySelector('#receipt-preview iframe').srcdoc.includes('Pisahkan kemasan &amp; kirim\\nSore hari')`));
         await clickButton('Cetak Struk');
         await waitFor(`!document.querySelector('#receipt-preview button[type="button"]:disabled')`);
         assert.equal(printed, true);

@@ -116,6 +116,7 @@ CREATE TABLE IF NOT EXISTS orders (
   user_id INTEGER NOT NULL DEFAULT 1,
   invoice_number VARCHAR(50) NOT NULL,
   customer_name VARCHAR(100) NOT NULL,
+  notes TEXT NOT NULL DEFAULT '',
   total_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
   tax_amount DECIMAL(15,2) DEFAULT 0.00,
   discount_amount DECIMAL(15,2) DEFAULT 0.00,

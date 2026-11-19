@@ -52,8 +52,10 @@ async function getOrderPayments(orderId) {
     return db.all('SELECT id, payment_method_id, payment_method, amount, created_at FROM payments WHERE order_id = ? AND store_id = ? ORDER BY id', [orderId, STORE_ID]);
 }
 
-async function createOrder(customer_name, items, tax_amount, discount, customer_id = 0, payment = null) {
+async function createOrder(customer_name, items, tax_amount, discount, customer_id = 0, payment = null, notes = '') {
     return withTransaction(async db => {
+        if (typeof notes !== 'string') throw new Error('Catatan pesanan tidak valid.');
+        notes = notes.trim();
         if (!Array.isArray(items) || !items.length) throw new Error('Keranjang masih kosong.');
         customer_id = Number(customer_id);
         let isVip = false;
@@ -107,8 +109,8 @@ async function createOrder(customer_name, items, tax_amount, discount, customer_
         }
 
         const orderResult = await db.run(
-            "INSERT INTO orders (store_id, user_id, customer_id, customer_name, invoice_number, total_amount, tax_amount, discount_amount, status, payment_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', 'Belum Bayar')",
-            [STORE_ID, userId, customer_id, customer_name, invoice, total_amount, tax_amount, discount]
+            "INSERT INTO orders (store_id, user_id, customer_id, customer_name, invoice_number, total_amount, tax_amount, discount_amount, notes, status, payment_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', 'Belum Bayar')",
+            [STORE_ID, userId, customer_id, customer_name, invoice, total_amount, tax_amount, discount, notes]
         );
         const order_id = orderResult.lastID;
 

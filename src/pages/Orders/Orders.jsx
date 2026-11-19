@@ -75,7 +75,7 @@ export default function Orders() {
   const openDetail = async (id, invoice) => {
     try {
       const [items, payments] = await Promise.all([window.api.getOrderDetail(id), window.api.getOrderPayments(id)]);
-      setDetail({ open: true, invoice, items: items || [], payments: payments || [] });
+      setDetail({ open: true, invoice, items: items || [], payments: payments || [], notes: orders.find(order => order.id === id)?.notes || '' });
     } catch {
       setError('Gagal memuat detail pesanan.');
     }
@@ -167,6 +167,7 @@ export default function Orders() {
         maxWidth={700}
       >
         <Table columns={itemColumns} data={detail.items} emptyText="Tidak ada item." />
+        {detail.notes && <div className="order-detail-notes"><h4>Catatan Pesanan</h4><p>{detail.notes}</p></div>}
         <h4>Pembayaran Tercatat</h4>
         <Table columns={[
           { key: 'created_at', label: 'Tanggal', render: row => new Date(row.created_at).toLocaleString('id-ID') },

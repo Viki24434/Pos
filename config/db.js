@@ -8,6 +8,7 @@ import { migratePayments } from './payment-migration.js';
 import { migratePrintSettings } from './print-migration.js';
 import { migrateVipPrices } from './vip-migration.js';
 import { migrateCosts } from './cost-migration.js';
+import { migrateOrderNotes } from './order-notes-migration.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -145,6 +146,7 @@ async function inisialisasiDatabase() {
         await migrateProductVariants(db);
         await withTransaction(migrateVipPrices);
         await withTransaction(migrateCosts);
+        await withTransaction(migrateOrderNotes);
         await migrateCustomerStatus(db);
         await withTransaction(migratePayments);
         await withTransaction(migratePrintSettings);

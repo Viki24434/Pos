@@ -8,6 +8,7 @@ import { migratePayments } from '../config/payment-migration.js';
 import { migratePrintSettings } from '../config/print-migration.js';
 import { migrateVipPrices } from '../config/vip-migration.js';
 import { migrateCosts } from '../config/cost-migration.js';
+import { migrateOrderNotes } from '../config/order-notes-migration.js';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 
@@ -63,6 +64,7 @@ export async function restoreBackup(filename, safetyDirectory, hooks = {}) {
                 await migrateCustomerStatus(staged);
                 await migrateVipPrices(staged);
                 await migrateCosts(staged);
+                await migrateOrderNotes(staged);
                 await migratePayments(staged);
                 await migratePrintSettings(staged);
                 await staged.exec('COMMIT');
