@@ -1,8 +1,29 @@
 const path = require('node:path');
-const { createBackup } = require('../models/Backup.js');
+const { createBackup, inspectBackup, restoreBackup } = require('../models/Backup.js');
 
 function registerBackupHandlers(ipcMain, { app, BrowserWindow, dialog }) {
     let busy = false;
+    ipcMain.handle('restore-database', async event => {
+        if (busy) return { success: false, message: 'Backup atau pemulihan masih berjalan.' };
+        busy = true;
+        try {
+            const parent = BrowserWindow.fromWebContents(event.sender);
+            const selected = await dialog.showOpenDialog(parent, {
+                title: 'Pilih Backup untuk Dipulihkan', filters: [{ name: 'Database SQLite', extensions: ['sqlite', 'db'] }], properties: ['openFile'],
+            });
+            if (selected.canceled || !selected.filePaths?.length) return { canceled: true };
+            const filename = selected.filePaths[0];
+            await inspectBackup(filename);
+            const confirmation = await dialog.showMessageBox(parent, {
+                type: 'warning', title: 'Pulihkan Backup', message: 'Ganti data aplikasi dengan backup ini?',
+                detail: `File: ${path.basename(filename)}\nData akan kembali ke kondisi saat backup dibuat. Cadangan data saat ini dibuat otomatis sebelum pemulihan. Setelah selesai, Anda perlu login menggunakan akun dari backup.`,
+                buttons: ['Batal', 'Pulihkan Backup'], defaultId: 0, cancelId: 0, noLink: true,
+            });
+            if (confirmation.response !== 1) return { canceled: true };
+            return { success: true, ...await restoreBackup(filename, path.join(app.getPath('userData'), 'backups')) };
+        } catch (error) { return { success: false, message: error.message || 'Gagal memulihkan backup.' }; }
+        finally { busy = false; }
+    });
     ipcMain.handle('backup-database', async event => {
         if (busy) return { success: false, message: 'Backup masih berjalan.' };
         busy = true;

@@ -1,11 +1,29 @@
 import { useState } from 'react';
 import Button from './Button/Button';
 import Alert from './Alert/Alert';
+import Modal from './Modal/Modal';
 
 export default function BackupSettings() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [backup, setBackup] = useState(null);
+  const [restoring, setRestoring] = useState(false);
+  const restore = async () => {
+    if (busy || restoring) return;
+    setRestoring(true);
+    setError('');
+    try {
+      if (!window.api?.restoreDatabase) throw new Error('Tutup dan buka ulang aplikasi untuk memuat fitur pemulihan.');
+      const result = await window.api.restoreDatabase();
+      if (result?.canceled) return;
+      if (!result?.success) throw new Error(result?.message || 'Gagal memulihkan backup.');
+      localStorage.removeItem('pos_session');
+      window.alert(`Backup berhasil dipulihkan. Cadangan data sebelumnya tersimpan di ${result.safetyPath}. Silakan login kembali.`);
+      window.location.hash = '/login';
+      window.location.reload();
+    } catch (restoreError) { setError(restoreError.message); }
+    finally { setRestoring(false); }
+  };
   const saveBackup = async () => {
     if (busy) return;
     setBusy(true);
@@ -25,7 +43,14 @@ export default function BackupSettings() {
       <p>Simpan produk, pelanggan, pesanan, pembayaran, akun pengguna, dan pengaturan dalam file database SQLite. Gambar produk tersimpan terpisah.</p>
       <Alert>{error}</Alert>
       {backup && <Alert variant="success">Backup berhasil disimpan di <span style={{ overflowWrap: 'anywhere' }}>{backup.path}</span> ({Math.ceil(backup.size / 1024)} KB).</Alert>}
-      <Button variant="primary" icon="fas fa-download" disabled={busy} onClick={saveBackup}>{busy ? 'Menyiapkan backup...' : 'Backup Database'}</Button>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <Button variant="primary" icon="fas fa-download" disabled={busy || restoring} onClick={saveBackup}>{busy ? 'Menyiapkan backup...' : 'Backup Database'}</Button>
+        <Button variant="secondary" icon="fas fa-upload" disabled={busy || restoring} onClick={restore}>Pulihkan Backup</Button>
+      </div>
+      <p>Pemulihan mengembalikan data ke kondisi saat backup dibuat. Aplikasi membuat cadangan data saat ini secara otomatis dan meminta login ulang setelah selesai.</p>
+      <Modal isOpen={restoring} title="Pemulihan Backup" onClose={() => {}}>
+        <p>Ikuti dialog pemilihan dan konfirmasi. Tunggu sampai proses pemulihan selesai.</p>
+      </Modal>
     </div>
   );
 }

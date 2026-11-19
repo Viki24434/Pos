@@ -55,7 +55,11 @@ app.whenReady().then(async () => {
         profile = await fs.mkdtemp(path.join(os.tmpdir(), 'app-js-variants-ui-'));
         app.setPath('userData', profile);
         const backupPath = path.join(profile, 'ui-backup.sqlite');
-        registerBackupHandlers(ipcMain, { app, BrowserWindow, dialog: { showSaveDialog: async () => ({ canceled: false, filePath: backupPath }) } });
+        registerBackupHandlers(ipcMain, { app, BrowserWindow, dialog: {
+            showSaveDialog: async () => ({ canceled: false, filePath: backupPath }),
+            showOpenDialog: async () => ({ canceled: false, filePaths: [backupPath] }),
+            showMessageBox: async () => ({ response: 1 }),
+        } });
         await inisialisasiDatabase();
         db = await getDbConnection();
         const express = require('express');
@@ -355,6 +359,14 @@ app.whenReady().then(async () => {
         window.destroy();
         window = mainWindow;
         console.log('PASS: old payment bridge shows recovery instructions instead of a blank page');
+        await evaluate(`location.hash = '#/settings'`);
+        await waitFor(`document.body.innerText.includes('Pulihkan Backup')`);
+        await clickButton('Pulihkan Backup');
+        await waitFor(`document.body.innerText.includes('Masuk Sekarang')`);
+        assert.equal(await evaluate(`localStorage.getItem('pos_session')`), null);
+        assert.equal((await db.get('SELECT COUNT(*) as count FROM orders')).count, 1);
+        assert.ok((await fs.readdir(path.join(profile, 'backups'))).some(name => name.startsWith('sebelum-pemulihan-')));
+        console.log('PASS: restore button restores the chosen backup, keeps a recovery copy and returns to login');
     } catch (error) {
         console.error(error);
         if (window) console.error('UI state:', await evaluate(`JSON.stringify({ url: location.href, body: document.body.innerText, session: localStorage.getItem('pos_session') })`));
