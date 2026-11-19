@@ -37,6 +37,14 @@ test('sales and profit reports preserve transaction costs, discounts, partial pa
     assert.equal(report.summary.gross_profit, null);
     assert.equal(report.summary.net_profit, null);
     assert.equal(report.rows.find(row => row.id === id).gross_profit, 70);
+    const [missingItem] = await Order.getOrderItems(old);
+    await assert.rejects(Report.saveOrderCosts(old, [{ id: missingItem.id, purchase_price: -1 }]), /minimal 0/);
+    await Report.saveOrderCosts(old, [{ id: missingItem.id, purchase_price: 40 }]);
+    report = await Report.getSalesProfitReport({ start: '2026-11-01', end: '2026-11-30' });
+    assert.equal(report.summary.missing_orders, 0);
+    assert.equal(report.rows.find(row => row.id === old).gross_profit, 60);
+    await assert.rejects(Report.saveOrderCosts(old, [{ id: missingItem.id, purchase_price: 10 }]), /berubah/);
+    assert.equal((await Order.getOrderItems(id))[0].purchase_price, 50);
     await assert.rejects(Report.getSalesProfitReport({ start: '2026-11-30', end: '2026-11-01' }), /Tanggal awal/);
     const variantProduct = await Product.create({ name: 'Varian Modal', purchase_price: 30, variants: [
         { name: 'Khusus', price: 100, purchase_price: 40, stock: 2 }, { name: 'Dasar', price: 100, stock: 2 },

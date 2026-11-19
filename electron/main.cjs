@@ -232,6 +232,10 @@ ipcMain.handle('get-sales-report', async (event, filter) => {
     try { return await Report.getSalesReport(filter.start, filter.end); } catch (e) { return []; }
 });
 ipcMain.handle('get-sales-profit-report', (_event, filter) => Report.getSalesProfitReport(filter));
+ipcMain.handle('save-order-costs', async (_event, orderId, costs) => {
+    try { return await Report.saveOrderCosts(orderId, costs); }
+    catch (error) { return { success: false, message: error.message }; }
+});
 ipcMain.handle('get-product-report', async () => {
     try { return await Report.getProductReport(); } catch (e) { return []; }
 });

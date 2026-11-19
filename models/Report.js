@@ -57,3 +57,23 @@ export async function getSalesReport(start, end) {
 export async function getProfitLossReport(start, end) {
     return (await getSalesProfitReport({ start, end })).summary;
 }
+
+export async function saveOrderCosts(orderId, costs) {
+    if (!Array.isArray(costs) || !costs.length) throw new Error('Isi harga modal terlebih dahulu.');
+    return withTransaction(async db => {
+        if (!await db.get('SELECT id FROM orders WHERE id = ? AND store_id = 1', [orderId])) throw new Error('Pesanan tidak ditemukan.');
+        const missing = await db.all('SELECT id FROM order_items WHERE order_id = ? AND purchase_price IS NULL', [orderId]);
+        const ids = new Set(costs.map(item => Number(item.id)));
+        if (!missing.length || ids.size !== costs.length || missing.length !== costs.length || missing.some(item => !ids.has(item.id))) {
+            throw new Error('Data modal berubah. Buka ulang form modal pesanan.');
+        }
+        for (const item of costs) {
+            const price = Number(item.purchase_price);
+            if (item.purchase_price == null || item.purchase_price === '' || !Number.isFinite(price) || price < 0 || !Number.isSafeInteger(Math.round(price * 100)) || Math.abs(price * 100 - Math.round(price * 100)) > 0.00001) {
+                throw new Error('Harga modal harus minimal 0, maksimal dua angka desimal.');
+            }
+            await db.run('UPDATE order_items SET purchase_price = ? WHERE id = ? AND order_id = ? AND purchase_price IS NULL', [price, item.id, orderId]);
+        }
+        return { success: true };
+    });
+}

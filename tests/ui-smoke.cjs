@@ -98,6 +98,10 @@ app.whenReady().then(async () => {
         ipcMain.handle('get-order-detail', (_event, id) => Order.getOrderItems(id));
         ipcMain.handle('get-finance-summary', (_event, filters) => Finance.getSummary(filters.start, filters.end));
         ipcMain.handle('get-sales-profit-report', (_event, filters) => Report.getSalesProfitReport(filters));
+        ipcMain.handle('save-order-costs', async (_event, id, costs) => {
+            try { return await Report.saveOrderCosts(id, costs); }
+            catch (error) { return { success: false, message: error.message }; }
+        });
         registerCustomerHandlers(ipcMain);
         ipcMain.handle('create-product', async (_event, payload) => {
             savedPayload = payload;
@@ -295,12 +299,31 @@ app.whenReady().then(async () => {
         assert.equal((await Finance.getSummary('', '')).saldoOther, 35000);
         assert.equal(await evaluate(`document.body.innerText.includes('Saldo Metode Lain')`), true);
         console.log('PASS: custom-method receipts appear in the finance page');
+        await db.run('UPDATE order_items SET purchase_price = NULL WHERE order_id = ?', [depositOrder.id]);
         await evaluate(`location.hash = '#/reports'`);
         await waitFor(`document.body.innerText.includes('Laporan Penjualan dan Laba') && document.body.innerText.includes('Rincian Penjualan')`);
         assert.ok(await evaluate(`document.body.innerText.includes('Modal Tercatat') && document.body.innerText.includes('Laba Bersih')`));
+        await waitFor(`!!document.querySelector('.reports-missing-cost .report-cost-button')`);
+        if (process.env.APP_JS_UI_SCREENSHOTS) {
+            await new Promise(resolve => setTimeout(resolve, 350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'report-cost-button.png'), (await window.webContents.capturePage()).toPNG());
+        }
+        await evaluate(`document.querySelector('.reports-missing-cost .report-cost-button').click()`);
+        await waitFor(`!!document.querySelector('#report-cost-modal input[type="number"]')`);
+        await fill('#report-cost-modal input[type="number"]', 30000);
+        await clickButton('Simpan Modal');
+        await waitFor(`!document.querySelector('#report-cost-modal') && !document.querySelector('.reports-missing-cost')`);
+        assert.equal((await Order.getOrderItems(depositOrder.id))[0].purchase_price, 30000);
+        console.log('PASS: missing-cost link opens an entry form and recalculates the profit report');
         if (process.env.APP_JS_UI_SCREENSHOTS) {
             await new Promise(resolve => setTimeout(resolve, 350));
             await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'sales-profit-report.png'), (await window.webContents.capturePage()).toPNG());
+            window.setSize(980, 900);
+            await evaluate(`document.querySelector('.reports-totals').scrollIntoView({ block: 'center' })`);
+            await new Promise(resolve => setTimeout(resolve, 350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'report-totals-narrow.png'), (await window.webContents.capturePage()).toPNG());
+            window.setSize(1280, 900);
+            await evaluate(`window.scrollTo(0, 0)`);
         }
         console.log('PASS: sales and profit report loads through the report page');
 
