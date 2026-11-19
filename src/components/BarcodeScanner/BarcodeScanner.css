@@ -1,0 +1,12 @@
+.barcode-scan-help { color:var(--muted); font-size:12px; }
+.barcode-camera { width:100%; max-height:340px; background:#111; border-radius:10px; object-fit:contain; margin-bottom:14px; }
+.barcode-camera[hidden] { display:none; }
+.barcode-scan-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+.barcode-file-button { cursor:pointer; color:var(--primary); font-size:12px; text-align:left; }
+.barcode-file-button input { display:block; max-width:100%; margin-top:6px; font-size:12px; }
+.cashier-product-filter { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
+.cashier-product-filter select { flex:1; min-width:130px; margin:0; }
+.cashier-product-filter input { flex:2; min-width:180px; margin:0; }
+.cashier-product-filter .btn { min-height:40px; }
+.barcode-scan-status { text-align:left; font-size:12px; margin:0 0 12px; color:#15803d; }
+.barcode-scan-status.error { color:#b91c1c; }

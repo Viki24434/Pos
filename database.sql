@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS stores (
   tax_percentage REAL DEFAULT 0.00,
   logo TEXT DEFAULT 'default.png',
   receipt_paper TEXT NOT NULL DEFAULT '80mm',
+  barcode_settings TEXT NOT NULL DEFAULT '{}',
   printer_name TEXT NOT NULL DEFAULT '',
   print_direct INTEGER NOT NULL DEFAULT 0,
   footer TEXT NOT NULL DEFAULT ''

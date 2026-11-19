@@ -51,6 +51,10 @@ test('main-process sessions enforce permissions, cashier identity, cost privacy 
     assert.equal(await invoke(stranger,'check-auth'),null);
     for (const channel of ['get-expiry-batches','set-batch-expiry','remove-batch-stock','get-users','save-user','backup-database','restore-database','get-sales-profit-report','get-dashboard-data','get-finance-summary','store-expenditure','save-settings','create-stock-receipt','create-category','future-unknown-command']) await assert.rejects(invoke(cashier,channel,{}),/hak akses|tidak diizinkan/);
     assert.equal(privilegedCalls,0);
+    for(const channel of ['create-variant-barcode','preview-product-barcode','save-product-barcode','get-barcode-settings','save-barcode-settings','preview-barcode-settings']){
+        ipcMain.handle(channel,()=>{throw new Error('Should not execute');});
+        await assert.rejects(invoke(cashier,channel,{}),/hak akses/);
+    }
     const product = await Product.create({name:'Rahasia Modal',price:10000,purchase_price:4000,stock:10});
     const variants = await Product.create({name:'Varian',variants:[{name:'A',price:10000,purchase_price:5000,stock:2}]});
     const catalog=await invoke(cashier,'get-products');

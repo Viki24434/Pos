@@ -19,6 +19,8 @@ const { registerPrintHandlers } = require('../electron/receipt.cjs');
 const { registerBackupHandlers } = require('../electron/backup.cjs');
 const { registerIncomingHandlers } = require('../electron/incoming-handlers.cjs');
 const { registerExpiryHandlers } = require('../electron/expiry-handlers.cjs');
+const { registerBarcodeHandlers } = require('../electron/barcode-handlers.cjs');
+const sharp = require('sharp');
 
 let server;
 let window;
@@ -60,6 +62,8 @@ app.whenReady().then(async () => {
         profile = await fs.mkdtemp(path.join(os.tmpdir(), 'app-js-variants-ui-'));
         app.setPath('userData', profile);
         const backupPath = path.join(profile, 'ui-backup.zip');
+        const barcodePath = path.join(profile,'barcode-test.png');
+        registerBarcodeHandlers(ipcMain,{BrowserWindow,dialog:{showSaveDialog:async()=>({canceled:false,filePath:barcodePath})}});
         registerBackupHandlers(ipcMain, { app, BrowserWindow, dialog: {
             showSaveDialog: async () => ({ canceled: false, filePath: backupPath }),
             showOpenDialog: async () => ({ canceled: false, filePaths: [backupPath] }),
@@ -175,6 +179,69 @@ app.whenReady().then(async () => {
         assert.equal((await Product.getById(product.id)).variants[0].id, product.variants[0].id);
         console.log('PASS: editing preserves existing variant IDs');
 
+        await evaluate(`location.hash='#/settings'`);
+        await waitFor(`!!document.querySelector('#barcode-width') && !document.querySelector('.barcode-settings-fieldset').disabled`);
+        await waitFor(`document.querySelector('.barcode-settings-preview img')?.naturalWidth===400`);
+        const barcodeSettingsBeforePreview=(await db.get('SELECT barcode_settings FROM stores WHERE id=1')).barcode_settings;
+        await fill('#barcode-width',640);
+        await fill('#barcode-height',300);
+        await waitFor(`document.querySelector('.barcode-settings-preview img')?.naturalWidth===640 && document.querySelector('.barcode-settings-preview img')?.naturalHeight===300 && document.querySelector('.barcode-settings-preview').getAttribute('aria-busy')==='false'`);
+        const firstBarcodePreview=await evaluate(`document.querySelector('.barcode-settings-preview img').src`);
+        await evaluate(`for(const key of ['show_variant','show_price','show_store','show_category','show_unit']){const input=document.querySelector('#barcode-'+key);if(!input.checked)input.click();}`);
+        await fill('#barcode-custom-text','Terima kasih');
+        await waitFor(`document.querySelector('.barcode-settings-preview img')?.src!==${JSON.stringify(firstBarcodePreview)} && document.querySelector('.barcode-settings-preview').getAttribute('aria-busy')==='false'`);
+        assert.equal((await db.get('SELECT barcode_settings FROM stores WHERE id=1')).barcode_settings,barcodeSettingsBeforePreview);
+        await fill('#barcode-height',30);
+        await waitFor(`document.querySelector('.barcode-settings-card').innerText.includes('Tinggi harus')`);
+        await fill('#barcode-height',300);
+        await waitFor(`!!document.querySelector('.barcode-settings-preview img') && document.querySelector('.barcode-settings-preview').getAttribute('aria-busy')==='false' && !document.querySelector('.barcode-settings-card').innerText.includes('Tinggi harus')`);
+        console.log('PASS: initial automatic barcode preview, live dimensions and content updates, invalid-size recovery, and unsaved settings preservation');
+        const dragBarcodeElement=async(key,dx,dy)=>{
+            await evaluate(`(()=>{const node=document.querySelector('[data-barcode-element="${key}"]');const rect=node.getBoundingClientRect();const x=rect.x+rect.width/2,y=rect.y+rect.height/2;node.dispatchEvent(new PointerEvent('pointerdown',{pointerId:9,button:0,buttons:1,clientX:x,clientY:y,bubbles:true}));node.dispatchEvent(new PointerEvent('pointermove',{pointerId:9,button:0,buttons:1,clientX:x+${dx},clientY:y+${dy},bubbles:true}));node.dispatchEvent(new PointerEvent('pointerup',{pointerId:9,button:0,buttons:0,clientX:x+${dx},clientY:y+${dy},bubbles:true}));})()`);
+            await waitFor(`document.querySelector('.barcode-settings-preview').getAttribute('aria-busy')==='false'`);
+        };
+        await dragBarcodeElement('name',-40,0);
+        assert.ok(await evaluate(`parseFloat(document.querySelector('[data-barcode-element="name"]').style.left)<49`));
+        await clickButton('Reset Posisi');
+        await waitFor(`document.querySelector('.barcode-settings-preview').getAttribute('aria-busy')==='false' && Math.abs(parseFloat(document.querySelector('[data-barcode-element="name"]').style.left)-50)<.2`);
+        await dragBarcodeElement('name',-40,0);
+        await dragBarcodeElement('variant',30,0);
+        await dragBarcodeElement('barcode',1,0);
+        console.log('PASS: label drag-and-drop moves product, variant and barcode, reset restores defaults, and live preview keeps matching the layout');
+        await clickButton('Simpan Pengaturan Barcode');
+        await waitFor(`document.querySelector('.barcode-settings-card').innerText.includes('Pengaturan barcode tersimpan.')`);
+        const savedBarcodeSettings=JSON.parse((await db.get('SELECT barcode_settings FROM stores WHERE id=1')).barcode_settings);
+        assert.equal(savedBarcodeSettings.width,640);assert.equal(savedBarcodeSettings.show_variant,true);assert.equal(savedBarcodeSettings.show_price,true);
+        assert.ok(savedBarcodeSettings.positions.name.x<.5);assert.ok(savedBarcodeSettings.positions.variant.x>.5);
+        if(process.env.APP_JS_UI_SCREENSHOTS){
+            await evaluate(`document.querySelector('.barcode-settings-card').scrollIntoView({block:'center'})`);
+            await new Promise(resolve=>setTimeout(resolve,350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS,'barcode-settings.png'),(await window.webContents.capturePage()).toPNG());
+        }
+        await evaluate(`location.hash='#/products'`);
+        await waitFor(`!!document.querySelector('button[title="Buat Barcode"]')`);
+        await evaluate(`document.querySelector('button[title="Buat Barcode"]').click()`);
+        await waitFor(`!!document.querySelector('#barcode-label-modal .barcode-preview img')`);
+        assert.equal(await evaluate(`!!document.querySelector('#barcode-label-modal #barcode-width')`),false);
+        await waitFor(`document.querySelector('#barcode-label-modal .barcode-image-info')?.textContent.includes('640 × 300')`);
+        await evaluate(`document.querySelector('#barcode-label-variant').value='${product.variants[0].id}';document.querySelector('#barcode-label-variant').dispatchEvent(new Event('change',{bubbles:true}))`);
+        await waitFor(`document.querySelector('#barcode-label-modal').innerText.includes('Buat Kode Varian') && !document.querySelector('#barcode-label-modal [aria-busy="true"]')`);
+        await clickButton('Buat Kode Varian');
+        await waitFor(`!!document.querySelector('#barcode-label-modal .barcode-preview img') && !document.querySelector('#barcode-label-modal [aria-busy="true"]')`);
+        const generatedSku=(await Product.getById(product.id)).variants[0].sku;
+        assert.match(generatedSku,/^V-/);
+        await clickButton('Simpan PNG');
+        await waitFor(`document.querySelector('#barcode-label-modal').innerText.includes('Gambar barcode tersimpan.')`);
+        const barcodeMeta=await sharp(barcodePath).metadata();
+        assert.equal(barcodeMeta.width,640);assert.equal(barcodeMeta.height,300);
+        assert.equal((await evaluate(`window.api.previewProductBarcode({product_id:${product.id},variant_id:${product.variants[0].id},width:120,height:80})`)).width,640);
+        if(process.env.APP_JS_UI_SCREENSHOTS){
+            await new Promise(resolve=>setTimeout(resolve,350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS,'barcode-label.png'),(await window.webContents.capturePage()).toPNG());
+        }
+        await evaluate(`document.querySelector('#barcode-label-modal .modal-close').click()`);
+        console.log('PASS: barcode preview, custom dimensions, stable generated variant SKU and native PNG save');
+
         await evaluate(`location.hash = '#/orders/create'`);
         await waitFor(`document.querySelectorAll('.product-tile').length === 1`);
         await evaluate(`window.alert = () => {}; document.querySelector('.product-tile').click()`);
@@ -185,6 +252,31 @@ app.whenReady().then(async () => {
         }
         await evaluate(`document.querySelectorAll('.variant-option')[0].click()`);
         await waitFor(`document.querySelectorAll('.cart-table-wrapper tbody tr').length === 1 && document.body.innerText.includes('Kaos UI - Merah / XL')`);
+        await fill('#barcode-scan',generatedSku);
+        await evaluate(`document.querySelector('#barcode-scan').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`);
+        await waitFor(`document.querySelector('.qty-stepper').textContent.includes('2')`);
+        assert.equal(await evaluate(`document.querySelector('#barcode-scan').value`),'');
+        await evaluate(`document.querySelector('.qty-stepper button:first-child').click()`);
+        await fill('#barcode-scan','NOT-REGISTERED');
+        await evaluate(`document.querySelector('#barcode-scan').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`);
+        await waitFor(`document.querySelector('.barcode-scan-status').textContent.includes('belum terdaftar')`);
+        await clickButton('Scan');
+        await waitFor(`!!document.querySelector('#barcode-scanner-modal')`);
+        await evaluate(`window.__originalMedia=navigator.mediaDevices;Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:async()=>{throw new DOMException('Denied','NotAllowedError')}}})`);
+        await clickButton('Mulai Kamera');
+        await waitFor(`document.querySelector('#barcode-scanner-modal').innerText.includes('Akses kamera ditolak')`);
+        const barcodeBase64=(await fs.readFile(barcodePath)).toString('base64');
+        await evaluate(`(()=>{const transfer=new DataTransfer();transfer.items.add(new File([Uint8Array.from(atob(${JSON.stringify(barcodeBase64)}),char=>char.charCodeAt(0))],'barcode.png',{type:'image/png'}));const input=document.querySelector('#barcode-image-file');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+        await waitFor(`!document.querySelector('#barcode-scanner-modal') && document.querySelector('.qty-stepper').textContent.includes('2')`);
+        await waitFor(`document.activeElement===document.querySelector('#barcode-scan')`);
+        await evaluate(`Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:window.__originalMedia});delete window.__originalMedia;document.querySelector('.qty-stepper button:first-child').click()`);
+        await fill('#barcode-scan',product.code);
+        await evaluate(`document.querySelector('#barcode-scan').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`);
+        await waitFor(`document.querySelectorAll('.variant-option').length===2`);
+        await evaluate(`document.querySelector('.variant-option').click()`);
+        await waitFor(`document.querySelector('.qty-stepper').textContent.includes('2')`);
+        await evaluate(`document.querySelector('.qty-stepper button:first-child').click()`);
+        console.log('PASS: keyboard scanner increments exact variants, unknown codes do not add items, camera denial recovers, and saved PNG scans back into the cart');
         await evaluate(`document.querySelector('.product-tile').click()`);
         await waitFor(`document.querySelectorAll('.variant-option').length === 2`);
         await evaluate(`document.querySelectorAll('.variant-option')[1].click()`);
@@ -717,6 +809,7 @@ app.whenReady().then(async () => {
         assert.equal(await evaluate(`localStorage.getItem('pos_session')`), null);
         assert.equal((await db.get('SELECT COUNT(*) as count FROM orders')).count, 1);
         assert.equal((await db.get('SELECT COUNT(*) as count FROM stock_receipts')).count, 0);
+        assert.equal(JSON.parse((await db.get('SELECT barcode_settings FROM stores WHERE id=1')).barcode_settings).width,640);
         assert.ok((await fs.readdir(path.join(profile, 'backups'))).some(name => name.startsWith('sebelum-pemulihan-')));
         console.log('PASS: restore button restores the chosen backup, keeps a recovery copy and returns to login');
     } catch (error) {

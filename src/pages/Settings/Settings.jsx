@@ -4,6 +4,7 @@ import Alert from '../../components/Alert/Alert';
 import PaymentMethods from '../../components/PaymentMethods/PaymentMethods';
 import PrintSettings from '../../components/PrintSettings';
 import BackupSettings from '../../components/BackupSettings';
+import BarcodeSettings from '../../components/BarcodeSettings';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import './Settings.css';
 import { useAuth } from '../../context/AuthContext';
@@ -120,6 +121,7 @@ export default function Settings() {
         </form>
       </div>
       <PrintSettings />
+      <BarcodeSettings />
       <PaymentMethods />
       </>}
       {can('backup.manage') && <BackupSettings />}

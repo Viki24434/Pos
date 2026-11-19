@@ -180,6 +180,7 @@ ipcMain.handle('delete-product', async (event, id) => {
 registerPaymentHandlers(ipcMain);
 require('./incoming-handlers.cjs').registerIncomingHandlers(ipcMain);
 require('./expiry-handlers.cjs').registerExpiryHandlers(ipcMain);
+require('./barcode-handlers.cjs').registerBarcodeHandlers(ipcMain,{BrowserWindow,dialog});
 
 ipcMain.handle('get-order-detail', async (event, id) => {
     try {

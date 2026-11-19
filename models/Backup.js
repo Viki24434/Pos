@@ -13,6 +13,7 @@ import { migrateWholesalePrices } from '../config/wholesale-migration.js';
 import { migrateBonusPromotions } from '../config/bonus-migration.js';
 import { migrateIncomingStock } from '../config/incoming-migration.js';
 import { migrateUserAccess } from '../config/access-migration.js';
+import { migrateBarcodeSettings } from '../config/barcode-migration.js';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 
@@ -76,6 +77,7 @@ export async function restoreBackup(filename, safetyDirectory, hooks = {}) {
                 if (!await staged.get("SELECT id FROM users WHERE store_id=1 AND role='Super Admin' AND active=1")) throw new Error('Backup tidak memiliki Super Admin aktif.');
                 await migratePayments(staged);
                 await migratePrintSettings(staged);
+                await migrateBarcodeSettings(staged);
                 await staged.exec('COMMIT');
                 await validateDatabase(staged);
                 if ((await staged.all('PRAGMA foreign_key_check')).length) throw new Error('Relasi data dalam backup tidak valid.');

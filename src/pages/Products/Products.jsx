@@ -14,6 +14,8 @@ import BonusPromotion from './BonusPromotion';
 import { normalizeWholesalePrices } from '../../../shared/pricing';
 import { normalizeBonusPromotion } from '../../../shared/promotions';
 import { useAuth } from '../../context/AuthContext';
+import IconButton from '../../components/IconButton/IconButton';
+import BarcodeLabel from '../../components/BarcodeLabel/BarcodeLabel';
 
 const EMPTY_PRODUCT = { id: '', code: '', name: '', category_id: '', unit_id: '', price: '', purchase_price: '', vip_price: '', wholesale_prices: [], buy_qty: 0, free_qty: 0, stock: '0', variants: [] };
 const EMPTY_CATEGORY = { id: '', name: '' };
@@ -21,6 +23,7 @@ const EMPTY_UNIT = { id: '', name: '', symbol: '' };
 
 export default function Products() {
   const { can } = useAuth();
+  const [barcodeProduct,setBarcodeProduct]=useState(null);
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [units, setUnits] = useState([]);
@@ -261,7 +264,7 @@ export default function Products() {
           data={filteredProducts}
           emptyText="Tidak ada produk."
           renderActions={(p) => (
-            <RowActions onEdit={() => openProductModal(p)} onDelete={() => deleteProduct(p.id)} />
+            <div className="product-barcode-actions"><RowActions onEdit={() => openProductModal(p)} onDelete={() => deleteProduct(p.id)} /><IconButton icon="fas fa-barcode" variant="secondary" title="Buat Barcode" onClick={()=>setBarcodeProduct(p)} /></div>
           )}
         />
       </div>
@@ -307,6 +310,7 @@ export default function Products() {
           </div>
         </div>
       </div>
+      {barcodeProduct && <BarcodeLabel product={barcodeProduct} onClose={()=>setBarcodeProduct(null)} onCodeCreated={loadData} />}
 
       <Modal 
         id="modal-preview-img"

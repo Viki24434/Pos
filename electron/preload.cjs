@@ -23,6 +23,12 @@ contextBridge.exposeInMainWorld('api', {
 
   // ===== Products =====
   getProducts: () => ipcRenderer.invoke('get-products'),
+  createVariantBarcode: (data) => ipcRenderer.invoke('create-variant-barcode', data),
+  getBarcodeSettings: () => ipcRenderer.invoke('get-barcode-settings'),
+  saveBarcodeSettings: (data) => ipcRenderer.invoke('save-barcode-settings', data),
+  previewBarcodeSettings: (data) => ipcRenderer.invoke('preview-barcode-settings', data),
+  previewProductBarcode: (data) => ipcRenderer.invoke('preview-product-barcode', data),
+  saveProductBarcode: (data) => ipcRenderer.invoke('save-product-barcode', data),
   getExpiryBatches: (filter) => ipcRenderer.invoke('get-expiry-batches', filter),
   setBatchExpiry: (data) => ipcRenderer.invoke('set-batch-expiry', data),
   removeBatchStock: (data) => ipcRenderer.invoke('remove-batch-stock', data),

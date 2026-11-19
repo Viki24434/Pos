@@ -1,0 +1,28 @@
+.barcode-product-name { font-weight:600; text-align:left; }
+.barcode-settings { margin:16px 0; }
+.barcode-dimensions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.barcode-options { display:flex; gap:14px; align-items:center; flex-wrap:wrap; text-align:left; }
+.barcode-options label { display:flex; gap:6px; align-items:center; font-size:12px; }
+.barcode-options .btn { margin-left:auto; }
+.barcode-preview { background:white; border:1px dashed var(--border-color); border-radius:10px; min-height:130px; padding:16px; display:flex; justify-content:center; align-items:center; overflow:auto; }
+.barcode-preview img { display:block; max-width:100%; height:auto; }
+.barcode-image-info { color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
+.product-barcode-actions { display:flex; gap:6px; align-items:center; justify-content:center; }
+.barcode-settings-fieldset { padding:0; margin:0; border:0; min-width:0; }
+.barcode-content-options { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:8px 0 18px; text-align:left; }
+.barcode-content-options label { display:flex; gap:8px; align-items:center; font-size:12px; cursor:pointer; }
+.barcode-settings-actions { display:flex; gap:10px; flex-wrap:wrap; }
+.barcode-settings-preview { margin-top:18px; }
+.barcode-settings-hint { color:var(--muted); font-size:12px; text-align:left; }
+.barcode-settings-hint a { color:var(--primary); font-weight:600; }
+.barcode-layout-toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:18px; text-align:left; }
+.barcode-layout-toolbar span { font-size:12px; color:var(--muted); }
+.barcode-layout-toolbar .btn { white-space:nowrap; }
+.barcode-layout-canvas { position:relative; width:100%; background:white; overflow:hidden; }
+.barcode-layout-canvas .barcode-layout-full-preview { position:absolute; inset:0; width:100%; height:100%; visibility:hidden; pointer-events:none; }
+.barcode-layout-element { position:absolute; transform:translate(-50%,-50%); border:0; border-radius:2px; background:none; padding:0; margin:0; cursor:grab; touch-action:none; user-select:none; outline:1px solid transparent; }
+.barcode-layout-element:hover,.barcode-layout-element:focus-visible { outline:1px dashed var(--primary); z-index:2; }
+.barcode-layout-element:active { cursor:grabbing; }
+.barcode-layout-element:disabled { cursor:wait; }
+.barcode-layout-element img { display:block; width:100%; height:100%; max-width:none; pointer-events:none; }
+@media(max-width:600px){.barcode-dimensions{grid-template-columns:1fr 1fr;}.barcode-options .btn{margin-left:0;width:100%;}}

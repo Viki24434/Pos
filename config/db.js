@@ -13,6 +13,7 @@ import { migrateWholesalePrices } from './wholesale-migration.js';
 import { migrateBonusPromotions } from './bonus-migration.js';
 import { migrateIncomingStock } from './incoming-migration.js';
 import { migrateUserAccess } from './access-migration.js';
+import { migrateBarcodeSettings } from './barcode-migration.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -158,6 +159,7 @@ async function inisialisasiDatabase() {
         await migrateCustomerStatus(db);
         await withTransaction(migratePayments);
         await withTransaction(migratePrintSettings);
+        await withTransaction(migrateBarcodeSettings);
         console.log('Database SQLite siap digunakan.');
     } catch (error) {
         console.error('Gagal inisialisasi database SQLite:', error.message);

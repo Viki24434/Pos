@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from '../../components/Button/Button';
 import Input from '../../components/Input/Input';
@@ -14,6 +14,8 @@ import { formatRp } from '../../utils/format';
 import './Create.css';
 import { getSellingPrice } from '../../../shared/pricing';
 import { getBonusQuantity } from '../../../shared/promotions';
+import { findBarcode } from '../../../shared/barcodes';
+import BarcodeScanner from '../../components/BarcodeScanner/BarcodeScanner';
 
 const ITEMS_PER_PAGE = 12; // Jumlah produk per halaman
 const stockOf = item => item?.sellable_stock ?? item?.stock ?? 0;
@@ -26,6 +28,9 @@ export default function CreateOrder() {
   
   // Filter & Pagination State
   const [search, setSearch] = useState('');
+  const scanInput=useRef(null);
+  const [scannerOpen,setScannerOpen]=useState(false);
+  const [scanStatus,setScanStatus]=useState(null);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   
@@ -63,6 +68,9 @@ export default function CreateOrder() {
   const [processing, setProcessing] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentError, setPaymentError] = useState('');
+  useEffect(()=>{
+    if(!scannerOpen && !variantProduct && !paymentOpen && !processing)scanInput.current?.focus();
+  },[scannerOpen,variantProduct,paymentOpen,processing]);
 
   useEffect(() => {
     (async () => {
@@ -139,6 +147,20 @@ export default function CreateOrder() {
         })
         .filter(Boolean)
     );
+  };
+
+  const scanBarcode=code=>{
+    if(processing || paymentOpen || variantProduct)return;
+    setSearch('');setCurrentPage(1);
+    try{
+      const {product,variant}=findBarcode(products,code);
+      if(!variant && product.variants?.length){addToCart(product);setScanStatus(null);return;}
+      const source=variant || product;
+      const qty=(cart.find(row=>row.product_id===product.id && (row.variant_id ?? null)===(variant?.id ?? null))?.qty || 0)+1;
+      if(qty+getBonusQuantity(source,qty)>stockOf(source))throw new Error('Stok layak jual tidak cukup untuk barang dan bonus.');
+      addToCart(product,variant);setScanStatus({message:`${product.name}${variant?' - '+variant.name:''} ditambahkan.`});
+    }catch(failure){setScanStatus({error:true,message:failure.message});}
+    setTimeout(()=>scanInput.current?.focus(),0);
   };
 
   const removeFromCart = (key) => {
@@ -264,7 +286,7 @@ export default function CreateOrder() {
       <div className="create-order-layout">
         <div className="card product-panel">
           
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+          <div className="cashier-product-filter">
             <select 
               className="input-field" 
               style={{ flex: 1, margin: 0 }}
@@ -278,14 +300,22 @@ export default function CreateOrder() {
             </select>
             
             <input
+              id="barcode-scan"
+              ref={scanInput}
               type="text"
               className="input-field"
-              placeholder="Cari nama atau scan barcode..."
+              placeholder="Cari nama / scan barcode + Enter"
+              aria-label="Cari atau scan barcode"
+              autoComplete="off"
+              disabled={processing || paymentOpen || !!variantProduct || scannerOpen}
               value={search}
               onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
+              onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();scanBarcode(event.currentTarget.value);}}}
               style={{ flex: 2, margin: 0 }}
             />
+            <Button variant="secondary" icon="fas fa-barcode" disabled={processing || paymentOpen || !!variantProduct} onClick={()=>setScannerOpen(true)}>Scan</Button>
           </div>
+          {scanStatus && <p role="status" className={`barcode-scan-status${scanStatus.error?' error':''}`}>{scanStatus.message}</p>}
 
           <div className="product-grid">
             {currentProducts.length === 0 ? (
@@ -423,6 +453,7 @@ export default function CreateOrder() {
       <Modal id="checkout-payment" isOpen={paymentOpen} onClose={() => { if (!processing) setPaymentOpen(false); }} title="Pembayaran Pesanan" maxWidth={500}>
         <PaymentForm total={grandTotal} allowUnpaid busy={processing} error={paymentError} onSubmit={submitOrder} />
       </Modal>
+      {scannerOpen && <BarcodeScanner onClose={()=>setScannerOpen(false)} onResult={code=>{setScannerOpen(false);scanBarcode(code);}} />}
       <Modal isOpen={!!variantProduct} onClose={() => setVariantProduct(null)} title={`Pilih Varian: ${variantProduct?.name || ''}`} maxWidth={550}>
         <div className="variant-options">
           {variantProduct?.variants.map(variant => (
