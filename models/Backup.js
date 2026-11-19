@@ -11,6 +11,7 @@ import { migrateCosts } from '../config/cost-migration.js';
 import { migrateOrderNotes } from '../config/order-notes-migration.js';
 import { migrateWholesalePrices } from '../config/wholesale-migration.js';
 import { migrateBonusPromotions } from '../config/bonus-migration.js';
+import { migrateIncomingStock } from '../config/incoming-migration.js';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 
@@ -69,6 +70,7 @@ export async function restoreBackup(filename, safetyDirectory, hooks = {}) {
                 await migrateOrderNotes(staged);
                 await migrateWholesalePrices(staged);
                 await migrateBonusPromotions(staged);
+                await migrateIncomingStock(staged);
                 await migratePayments(staged);
                 await migratePrintSettings(staged);
                 await staged.exec('COMMIT');

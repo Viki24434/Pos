@@ -23,6 +23,11 @@ contextBridge.exposeInMainWorld('api', {
 
   // ===== Products =====
   getProducts: () => ipcRenderer.invoke('get-products'),
+  getSuppliers: () => ipcRenderer.invoke('get-suppliers'),
+  saveSupplier: (data) => ipcRenderer.invoke('save-supplier', data),
+  getStockReceipts: (filters) => ipcRenderer.invoke('get-stock-receipts', filters),
+  getStockReceiptDetail: (id) => ipcRenderer.invoke('get-stock-receipt-detail', id),
+  createStockReceipt: (data) => ipcRenderer.invoke('create-stock-receipt', data),
   getProduct: (id) => ipcRenderer.invoke('get-product', id),
   createProduct: (data) => ipcRenderer.invoke('create-product', data),
   updateProduct: (id, data) => ipcRenderer.invoke('update-product', id, data),

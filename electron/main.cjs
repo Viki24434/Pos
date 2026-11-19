@@ -217,6 +217,7 @@ ipcMain.handle('delete-product', async (event, id) => {
 });
 
 registerPaymentHandlers(ipcMain);
+require('./incoming-handlers.cjs').registerIncomingHandlers(ipcMain);
 
 ipcMain.handle('get-order-detail', async (event, id) => {
     try {

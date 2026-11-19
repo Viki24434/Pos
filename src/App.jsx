@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard/Dashboard';
 
 import Orders from './pages/Orders/Orders';
 import Receivables from './pages/Receivables/Receivables';
+import IncomingStock from './pages/IncomingStock/IncomingStock';
 import CreateOrder from './pages/Orders/Create';
 import Products from './pages/Products/Products';
 import Customers from './pages/Customers/Customers';
@@ -67,6 +68,7 @@ function AppRoutes() {
         <Route index element={<Dashboard />} />
         <Route path="orders" element={<Orders />} />
         <Route path="receivables" element={<Receivables />} />
+        <Route path="incoming-stock" element={<IncomingStock />} />
         <Route path="orders/create" element={<CreateOrder />} />
         <Route path="products" element={<Products />} />
         <Route path="customers" element={<Customers />} />

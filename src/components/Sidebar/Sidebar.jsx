@@ -7,6 +7,7 @@ const NAV_GROUPS = [
     items: [
       { to: '/', icon: 'fas fa-home', label: 'Dashboard', end: true },
       { to: '/orders', icon: 'fas fa-shopping-cart', label: 'Kasir / Orders' },
+      { to: '/incoming-stock', icon: 'fas fa-truck-loading', label: 'Barang Masuk' },
     ],
   },
   {

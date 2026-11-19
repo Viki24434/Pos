@@ -16,6 +16,7 @@ const { registerCustomerHandlers } = require('../electron/customer-handlers.cjs'
 const { registerPaymentHandlers } = require('../electron/payment-handlers.cjs');
 const { registerPrintHandlers } = require('../electron/receipt.cjs');
 const { registerBackupHandlers } = require('../electron/backup.cjs');
+const { registerIncomingHandlers } = require('../electron/incoming-handlers.cjs');
 
 let server;
 let window;
@@ -83,6 +84,7 @@ app.whenReady().then(async () => {
         ipcMain.handle('get-categories', () => []);
         ipcMain.handle('get-units', () => []);
         registerPaymentHandlers(ipcMain);
+        registerIncomingHandlers(ipcMain);
         const printWindowFactory = function(options) {
             const target = new BrowserWindow(options);
             target.webContents.print = (printOptions, callback) => {
@@ -540,12 +542,72 @@ app.whenReady().then(async () => {
         await evaluate(`document.querySelector('#receipt-preview .modal-close').click()`);
         console.log('PASS: buy-4-get-1 promotion repeats, updates bonus quantities, deducts stock and appears in details and receipts');
         console.log('PASS: wholesale editor saves tiers and checkout reprices upward and downward across quantity thresholds');
+
+        await evaluate(`document.querySelector('a[href="#/incoming-stock"]').click()`);
+        await waitFor(`document.body.innerText.includes('Barang Masuk & Supplier') && document.body.innerText.includes('Belum ada barang masuk sesuai filter.')`);
+        await clickButton('Tambah Barang Masuk');
+        await waitFor(`!!document.querySelector('#incoming-form')`);
+        await clickButton('Tambah Supplier');
+        await waitFor(`!!document.querySelector('#supplier-name')`);
+        await fill('#supplier-name', 'Supplier UI');
+        await fill('#supplier-phone', '081234000');
+        await fill('#supplier-address', 'Jalan Pasar');
+        await clickButton('Simpan Supplier');
+        await waitFor(`!!document.querySelector('#incoming-form') && document.querySelector('#incoming-supplier').value !== ''`);
+        const supplierId = Number(await evaluate(`document.querySelector('#incoming-supplier').value`));
+        await fill('#incoming-reference', 'NOTA-UI-001');
+        await evaluate(`document.querySelector('.incoming-item select').value = '${wholesaleProduct.id}:0'; document.querySelector('.incoming-item select').dispatchEvent(new Event('change', {bubbles:true}))`);
+        await fill('input[aria-label="Jumlah barang 1"]', 24);
+        await fill('input[aria-label="Harga beli barang 1"]', 7000);
+        await clickButton('Tambah Barang');
+        const beforeIncoming = await Product.getById(product.id);
+        const incomingVariant = beforeIncoming.variants[0];
+        await evaluate(`document.querySelectorAll('.incoming-item select')[1].value = '${product.id}:${incomingVariant.id}'; document.querySelectorAll('.incoming-item select')[1].dispatchEvent(new Event('change', {bubbles:true}))`);
+        await fill('input[aria-label="Jumlah barang 2"]', 5);
+        await fill('input[aria-label="Harga beli barang 2"]', 32000);
+        if (process.env.APP_JS_UI_SCREENSHOTS) {
+            await new Promise(resolve => setTimeout(resolve, 350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'incoming-form.png'), (await window.webContents.capturePage()).toPNG());
+            window.setSize(650, 950);
+            await new Promise(resolve => setTimeout(resolve, 350));
+            assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), true);
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'incoming-form-narrow.png'), (await window.webContents.capturePage()).toPNG());
+            window.setSize(1280, 900);
+        }
+        await clickButton('Simpan Barang Masuk');
+        await waitFor(`!document.querySelector('#incoming-form') && !!document.querySelector('button[title="Detail Barang Masuk"]')`);
+        assert.equal((await Product.getById(wholesaleProduct.id)).stock, 111);
+        assert.equal((await Product.getById(wholesaleProduct.id)).purchase_price, 7000);
+        assert.equal((await Product.getById(product.id)).variants[0].stock, incomingVariant.stock + 5);
+        assert.equal((await Product.getById(product.id)).variants[0].purchase_price, 32000);
+        await evaluate(`document.querySelector('button[title="Detail Barang Masuk"]').click()`);
+        await waitFor(`!!document.querySelector('#incoming-detail') && document.querySelector('#incoming-detail').innerText.includes('328.000')`);
+        assert.ok(await evaluate(`document.querySelector('#incoming-detail').innerText.includes('Kaos UI - Merah / XL')`));
+        await evaluate(`document.querySelector('#incoming-detail .modal-close').click()`);
+        if (process.env.APP_JS_UI_SCREENSHOTS) {
+            await new Promise(resolve => setTimeout(resolve, 350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'incoming-history.png'), (await window.webContents.capturePage()).toPNG());
+        }
+        await clickButton('Supplier');
+        await waitFor(`!!document.querySelector('button[title="Edit Supplier"]')`);
+        await evaluate(`document.querySelector('button[title="Edit Supplier"]').click()`);
+        await waitFor(`!!document.querySelector('#supplier-name')`);
+        await fill('#supplier-name', 'Supplier UI Baru');
+        await evaluate(`document.querySelector('#incoming-supplier-modal input[type="checkbox"]').click()`);
+        await clickButton('Simpan Supplier');
+        await waitFor(`!document.querySelector('#incoming-supplier-modal') && document.querySelector('.incoming-suppliers').innerText.includes('Nonaktif')`);
+        assert.equal((await db.get('SELECT active FROM suppliers WHERE id=?', [supplierId])).active, 0);
+        await clickButton('Barang Masuk');
+        await waitFor(`document.querySelector('.incoming-history')?.innerText.includes('Supplier UI')`);
+        assert.equal((await db.get('SELECT supplier_name FROM stock_receipts ORDER BY id DESC LIMIT 1')).supplier_name, 'Supplier UI');
+        console.log('PASS: inline supplier creation, mixed incoming stock, costs, receipt detail, supplier edit and immutable supplier snapshot through real IPC');
         await evaluate(`location.hash = '#/settings'`);
         await waitFor(`document.body.innerText.includes('Pulihkan Backup')`);
         await clickButton('Pulihkan Backup');
         await waitFor(`document.body.innerText.includes('Masuk Sekarang')`);
         assert.equal(await evaluate(`localStorage.getItem('pos_session')`), null);
         assert.equal((await db.get('SELECT COUNT(*) as count FROM orders')).count, 1);
+        assert.equal((await db.get('SELECT COUNT(*) as count FROM stock_receipts')).count, 0);
         assert.ok((await fs.readdir(path.join(profile, 'backups'))).some(name => name.startsWith('sebelum-pemulihan-')));
         console.log('PASS: restore button restores the chosen backup, keeps a recovery copy and returns to login');
     } catch (error) {
