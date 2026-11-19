@@ -417,6 +417,46 @@ app.whenReady().then(async () => {
         assert.equal((await Order.getOrderPayments(unpaid.id)).length, 0);
         console.log('PASS: save unpaid order exposes a labeled Bayar button');
 
+        await evaluate(`document.querySelector('a[href="#/receivables"]').click()`);
+        await waitFor(`!!document.querySelector('#receivable-search') && !!document.querySelector('button[title="Bayar Piutang"]')`);
+        await fill('#receivable-search', unpaid.invoice_number);
+        await clickButton('Cari');
+        await waitFor(`document.querySelectorAll('.receivable-table tbody tr').length === 1 && !!document.querySelector('button[title="Bayar Piutang"]')`);
+        assert.ok(await evaluate(`document.querySelector('.receivable-summary').innerText.includes('60.000')`));
+        await evaluate(`document.querySelector('button[title="Atur Jatuh Tempo"]').click()`);
+        await waitFor(`!!document.querySelector('#receivable-due-date')`);
+        const { yesterday } = await db.get("SELECT DATE('now','localtime','-1 day') as yesterday");
+        await fill('#receivable-due-date', yesterday);
+        await clickButton('Simpan Jatuh Tempo');
+        await waitFor(`!document.querySelector('#receivable-due-modal') && document.querySelector('.receivable-table').innerText.includes('Lewat jatuh tempo')`);
+        if (process.env.APP_JS_UI_SCREENSHOTS) {
+            await new Promise(resolve => setTimeout(resolve, 350));
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'receivables-desktop.png'), (await window.webContents.capturePage()).toPNG());
+            window.setSize(650, 950);
+            await new Promise(resolve => setTimeout(resolve, 350));
+            assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), true);
+            await fs.writeFile(path.join(process.env.APP_JS_UI_SCREENSHOTS, 'receivables-narrow.png'), (await window.webContents.capturePage()).toPNG());
+            window.setSize(1280, 900);
+        }
+        await evaluate(`document.querySelector('button[title="Bayar Piutang"]').click()`);
+        await waitFor(`!!document.querySelector('#receivable-payment #payment-method option[value="Cash"]')`);
+        await fill('#payment-amount', 20000);
+        await clickButton('Simpan Pembayaran');
+        await waitFor(`!document.querySelector('#receivable-payment') && document.querySelector('.receivable-table').innerText.includes('40.000')`);
+        assert.equal((await Order.getOrderPayments(unpaid.id))[0].amount, 20000);
+        await evaluate(`document.querySelector('button[title="Riwayat Piutang"]').click()`);
+        await waitFor(`!!document.querySelector('#receivable-history') && document.querySelector('#receivable-history').innerText.includes('Cash')`);
+        assert.ok(await evaluate(`document.querySelector('#receivable-history').innerText.includes('20.000')`));
+        await evaluate(`document.querySelector('#receivable-history .modal-close').click()`);
+        await evaluate(`document.querySelector('button[title="Bayar Piutang"]').click()`);
+        await waitFor(`!!document.querySelector('#receivable-payment #payment-method option[value="Transfer"]')`);
+        await evaluate(`document.querySelector('#payment-method').value = 'Transfer'; document.querySelector('#payment-method').dispatchEvent(new Event('change', {bubbles:true}))`);
+        await clickButton('Simpan Pembayaran');
+        await waitFor(`!document.querySelector('#receivable-payment') && document.querySelector('.receivable-table').innerText.includes('Tidak ada piutang sesuai filter.')`);
+        assert.equal((await Order.getOrderById(unpaid.id)).payment_status, 'Lunas');
+        assert.equal((await Order.getOrderPayments(unpaid.id)).length, 2);
+        console.log('PASS: receivables navigation, invoice search, due date, overdue display, installment history and settlement through real IPC');
+
         const mainWindow = window;
         window = new BrowserWindow({ show: false, width: 1100, height: 850, webPreferences: {
             preload: path.resolve(__dirname, 'fixtures/legacy-preload.cjs'), session: isolatedSession, backgroundThrottling: false, offscreen: true,

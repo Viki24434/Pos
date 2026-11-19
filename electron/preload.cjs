@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('api', {
 
   // ===== Orders / POS =====
   getOrders: (filters) => ipcRenderer.invoke('get-orders', filters),
+  getReceivables: (filters) => ipcRenderer.invoke('get-receivables', filters),
+  setReceivableDueDate: (id, dueDate) => ipcRenderer.invoke('set-receivable-due-date', id, dueDate),
   getOrderDetail: (id) => ipcRenderer.invoke('get-order-detail', id),
   getOrderPayments: (id) => ipcRenderer.invoke('get-order-payments', id),
   getPrintData: (id) => ipcRenderer.invoke('get-print-data', id),

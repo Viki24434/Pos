@@ -20,6 +20,7 @@ const NAV_GROUPS = [
     label: 'Sistem & Laporan',
     items: [
       { to: '/finance', icon: 'fas fa-wallet', label: 'Arus Kas & Buku Kas' },
+      { to: '/receivables', icon: 'fas fa-file-invoice-dollar', label: 'Daftar Piutang' },
       { to: '/reports', icon: 'fas fa-chart-line', label: 'Laporan Keuangan' },
       { to: '/users', icon: 'fas fa-users-cog', label: 'Pengaturan User' },
       { to: '/settings', icon: 'fas fa-cogs', label: 'Pengaturan Toko' },

@@ -1,0 +1,28 @@
+.receivables-page { display: flex; flex-direction: column; gap: 20px; }
+.receivable-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.receivable-summary .card { margin: 0; display: flex; flex-direction: column; gap: 8px; text-align: left; }
+.receivable-summary span { color: var(--muted); font-size: 12px; }
+.receivable-summary strong { font-size: 24px; color: var(--primary); overflow-wrap: anywhere; }
+.receivable-summary small { color: var(--muted); font-size: 11px; }
+.receivable-filter { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.receivable-filter .input-group { margin: 0; flex: 1; min-width: 160px; }
+.receivable-filter .input-group:first-child { flex: 2; min-width: 240px; }
+.receivable-filter > .btn { min-height: 40px; }
+.receivable-table small, .receivable-modal-invoice { display: block; color: var(--muted); font-size: 11px; margin-top: 5px; }
+.receivable-invoice { color: var(--primary); }
+.receivable-overdue, .receivable-overdue small { color: #b91c1c; }
+.receivable-actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+.receivable-actions > div { display: flex; gap: 6px; }
+.receivable-actions > div > .btn { flex: 1; }
+.receivable-loading { margin: 12px; text-align: center; color: var(--muted); }
+.receivable-detail-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 16px 0 24px; padding: 14px; background: var(--table-head); border-radius: 10px; font-size: 12px; }
+.receivable-detail-totals strong { display: block; margin-top: 6px; }
+.receivable-history-heading { margin-top: 24px; }
+.receivable-notes { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .receivable-summary { grid-template-columns: 1fr; gap: 10px; }
+  .receivable-summary strong { font-size: 21px; }
+  .receivable-filter .input-group, .receivable-filter .input-group:first-child { flex: 1 1 100%; min-width: 0; }
+  .receivable-filter > .btn { flex: 1; }
+  .receivable-detail-totals { grid-template-columns: 1fr; }
+}

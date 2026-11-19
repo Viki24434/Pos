@@ -1,5 +1,6 @@
 const Order = require('../models/Order.js');
 const PaymentMethod = require('../models/PaymentMethod.js');
+const Receivable = require('../models/Receivable.js');
 
 function registerPaymentHandlers(ipcMain) {
     const mutate = operation => async (...args) => {
@@ -10,6 +11,8 @@ function registerPaymentHandlers(ipcMain) {
     ipcMain.handle('create-payment-method', mutate((_event, data) => PaymentMethod.create(data)));
     ipcMain.handle('set-payment-method-active', mutate((_event, id, active) => PaymentMethod.setActive(id, active)));
     ipcMain.handle('get-orders', (_event, filters) => Order.getAllOrders(filters));
+    ipcMain.handle('get-receivables', (_event, filters) => Receivable.getReceivables(filters));
+    ipcMain.handle('set-receivable-due-date', mutate((_event, id, dueDate) => Receivable.setDueDate(id, dueDate)));
     ipcMain.handle('get-order-payments', (_event, id) => Order.getOrderPayments(id));
     ipcMain.handle('create-order', async (_event, data) => {
         try {

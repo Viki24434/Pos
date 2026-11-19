@@ -177,6 +177,7 @@ async function recordPayment(db, order_id, user_id, method, amount) {
     }
     const order = await db.get('SELECT * FROM orders WHERE id = ? AND store_id = ?', [order_id, STORE_ID]);
     if (!order) throw new Error('Pesanan tidak ditemukan.');
+    if (['batal', 'dibatalkan', 'cancelled', 'canceled'].includes(String(order.status || '').toLowerCase())) throw new Error('Pesanan dibatalkan dan tidak dapat dibayar.');
     if (!await db.get('SELECT id FROM users WHERE id = ? AND store_id = ?', [user_id, STORE_ID])) {
         throw new Error('Pengguna kasir tidak ditemukan. Silakan login ulang.');
     }
