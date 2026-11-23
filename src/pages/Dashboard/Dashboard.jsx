@@ -101,11 +101,7 @@ export default function Dashboard() {
       label: 'Status',
       headerStyle: { textAlign: 'center' },
       cellStyle: { textAlign: 'center' },
-      render: (row) => (
-        <StatusBadge variant={row.payment_status === 'Lunas' ? 'success' : 'danger'}>
-          {row.payment_status}
-        </StatusBadge>
-      )
+      render: (row) => <StatusBadge status={row.payment_status} />
     }
   ];
 

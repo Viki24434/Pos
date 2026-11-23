@@ -48,6 +48,14 @@ async function clickButton(text) {
     await evaluate(`Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim() === ${JSON.stringify(text)}).click()`);
 }
 
+async function checkDashboardStatus(order,status) {
+    await evaluate(`location.hash='#/'`);
+    const row=`Array.from(document.querySelectorAll('.dash-wrapper tbody tr')).find(row=>row.innerText.includes(${JSON.stringify(order.invoice_number)}))`;
+    await waitFor(`${row}?.querySelector('.badge-pill')?.textContent===${JSON.stringify(status)}`);
+    await evaluate(`location.hash='#/orders'`);
+    await waitFor(`document.body.innerText.includes('Riwayat Pesanan') && Array.from(document.querySelectorAll('tbody tr')).some(row=>row.innerText.includes(${JSON.stringify(order.invoice_number)}))`);
+}
+
 async function fill(selector, value) {
     await evaluate(`(() => {
         const input = document.querySelector(${JSON.stringify(selector)});
@@ -86,7 +94,7 @@ app.whenReady().then(async () => {
         ipcMain.handle('check-activation', () => true);
         ipcMain.handle('get-settings', () => ({ name: 'Test' }));
         ipcMain.handle('get-ip-address', () => '127.0.0.1');
-        ipcMain.handle('get-dashboard-data', () => ({ omzet:0, laba:0, transaksi:0, piutang:0, lowStocks:[], recentOrders:[], topProducts:[], chartLabels:[], chartData:[] }));
+        ipcMain.handle('get-dashboard-data', async () => ({ omzet:0, laba:0, transaksi:0, piutang:0, lowStocks:[], recentOrders:await db.all('SELECT invoice_number,customer_name,total_amount,payment_status,created_at FROM orders ORDER BY created_at DESC,id DESC LIMIT 5'), topProducts:[], chartLabels:[], chartData:[] }));
         ipcMain.handle('get-products', () => Product.getAll());
         ipcMain.handle('get-categories', () => []);
         ipcMain.handle('get-units', () => []);
@@ -296,6 +304,7 @@ app.whenReady().then(async () => {
         const order = await db.get('SELECT * FROM orders ORDER BY id DESC LIMIT 1');
         assert.equal(order.total_amount, 170000);
         assert.equal(order.payment_status, 'Lunas');
+        await checkDashboardStatus(order,'Lunas');
         assert.equal(order.notes, 'Pisahkan kemasan & kirim\nSore hari');
         assert.equal((await Order.getOrderItems(order.id)).length, 2);
         assert.equal((await db.get('SELECT SUM(amount) as amount FROM payments WHERE order_id = ?', [order.id])).amount, 170000);
@@ -385,6 +394,7 @@ app.whenReady().then(async () => {
         await waitFor(`document.body.innerText.includes('Riwayat Pesanan') && !!document.querySelector('button[title="Bayar"]')`);
         const depositOrder = await db.get('SELECT * FROM orders ORDER BY id DESC LIMIT 1');
         assert.equal(depositOrder.payment_status, 'DP');
+        await checkDashboardStatus(depositOrder,'DP');
         assert.equal((await db.get('SELECT payment_method FROM payments WHERE order_id = ?', [depositOrder.id])).payment_method, 'DANA');
         await evaluate(`document.querySelector('button[title="Bayar"]').click()`);
         await waitFor(`!!document.querySelector('#order-payment #payment-method option[value="DANA"]')`);
@@ -512,6 +522,8 @@ app.whenReady().then(async () => {
         assert.match(await evaluate(`document.querySelector('button[title="Bayar"]').textContent`), /Bayar/);
         const unpaid = await db.get('SELECT * FROM orders ORDER BY id DESC LIMIT 1');
         assert.equal(unpaid.payment_status, 'Belum Bayar');
+        await checkDashboardStatus(unpaid,'Belum Bayar');
+        console.log('PASS: dashboard displays paid, deposit and unpaid status badges from database orders');
         assert.equal((await Order.getOrderPayments(unpaid.id)).length, 0);
         console.log('PASS: save unpaid order exposes a labeled Bayar button');
 
